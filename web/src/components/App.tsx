@@ -19,6 +19,7 @@ import Dashboard from '../routes/dashboard/Dashboard'
 import Datasets from '../routes/datasets/Datasets'
 import Events from '../routes/events/Events'
 import Header from './header/Header'
+import Ingestion from '../routes/ingestion/Ingestion'
 import Jobs from '../routes/jobs/Jobs'
 import React, { ReactElement } from 'react'
 import Sidenav from './sidenav/Sidenav'
@@ -67,6 +68,7 @@ const App = (): ReactElement => {
                     <Route path={'/jobs'} element={<Jobs />} />
                     <Route path={'/datasets'} element={<Datasets />} />
                     <Route path={'/events'} element={<Events />} />
+                    <Route path={'/ingestion'} element={<Ingestion />} />
                     <Route
                       path={'/datasets/column-level/:namespace/:name'}
                       element={<ColumnLevel />}
