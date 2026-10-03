@@ -1,0 +1,55 @@
+name: Build Marquez Web image and push to ECR
+
+on:
+  push:
+    branches:
+      - chartmetric-0.51.1
+    paths:
+      - .github/workflows/build-push-ecr-marquez-web.yml
+      - web/**
+  workflow_dispatch:
+
+concurrency:
+  group: marquez-web-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+  ECR_IMAGE: 897744604563.dkr.ecr.us-west-2.amazonaws.com/chartmetric/chartmetric-infra
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Marquez Web
+        uses: docker/build-push-action@v6
+        with:
+          context: web
+          file: web/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.ECR_IMAGE }}:marquez-web-${{ github.sha }}
+            ${{ env.ECR_IMAGE }}:marquez-web
+          cache-from: type=gha,scope=marquez-web
+          cache-to: type=gha,mode=max,scope=marquez-web
