@@ -23,7 +23,10 @@ const MqIconButton: React.FC<IconButtonProps> = ({ id, title, active, children, 
   return (
     <Box
       sx={{
+        alignItems: 'center',
         color: 'transparent',
+        display: 'flex',
+        flexDirection: 'column',
         transition: theme.transitions.create(['color']),
         '&:hover': {
           color: THEME_EXTRA.typography.subdued,

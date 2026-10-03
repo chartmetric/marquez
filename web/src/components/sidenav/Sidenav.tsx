@@ -19,7 +19,7 @@ import { FormControl, MenuItem, Select } from '@mui/material'
 import { MqInputNoIcon } from '../core/input-base/MqInputBase'
 import { useTheme } from '@emotion/react'
 
-import { Dashboard } from '@mui/icons-material'
+import { BarChart, Dashboard } from '@mui/icons-material'
 import iconSearchArrow from '../../img/iconSearchArrow.svg'
 import marquez_logo from './marquez-icon-white-solid.svg'
 
@@ -108,6 +108,14 @@ const Sidenav: React.FC<SidenavProps> = () => {
             active={location.pathname === '/events'}
           >
             <SVG src={iconSearchArrow} width={'20px'} />
+          </MqIconButton>
+          <MqIconButton
+            id={'ingestionDrawerButton'}
+            to={'/ingestion'}
+            title={'Ingestion Activity'}
+            active={location.pathname === '/ingestion'}
+          >
+            <BarChart />
           </MqIconButton>
         </Box>
         <FormControl
