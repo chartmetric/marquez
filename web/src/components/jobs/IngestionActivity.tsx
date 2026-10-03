@@ -2,38 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Box, Table, TableBody, TableCell, TableHead, TableRow } from '@mui/material'
+import {
+  IngestionActivityFacet,
+  IngestionActivityObservation,
+} from '../../helpers/ingestionActivity'
 import { theme } from '../../helpers/theme'
 import MqStatus from '../core/status/MqStatus'
 import MqText from '../core/text/MqText'
 import React from 'react'
 
-export interface IngestionActivityObservation {
-  actual_count?: number
-  baseline_avg?: number
-  error?: string
-  expectation?: {
-    backend?: string
-    table?: string
-  }
-  expected_date?: string
-  passed?: boolean
-  run_activity?: {
-    error?: string
-    ingested_count?: number
-    status?: string
-    timestamp_column?: string
-    window_end?: string
-    window_start?: string
-  }
-  status?: string
-}
-
-export interface IngestionActivityFacet {
-  observations?: IngestionActivityObservation[]
-}
-
 interface IngestionActivityProps {
   facet?: IngestionActivityFacet
+  observations?: IngestionActivityObservation[]
+  table?: string
+  task?: string
 }
 
 const formatCount = (value?: number) =>
@@ -61,8 +43,17 @@ const observationStatus = (observation: IngestionActivityObservation) => {
   return { color: theme.palette.info.main, label: 'OBSERVING' }
 }
 
-const IngestionActivity: React.FC<IngestionActivityProps> = ({ facet }) => {
-  const observations = facet?.observations || []
+const IngestionActivity: React.FC<IngestionActivityProps> = ({
+  facet,
+  observations: activityObservations,
+  table,
+  task,
+}) => {
+  const observations = (activityObservations || facet?.observations || []).filter(
+    (observation) =>
+      (!table || observation.expectation?.table === table) &&
+      (!task || !observation.run_activity?.task_id || observation.run_activity.task_id === task)
+  )
 
   if (observations.length === 0) {
     return null
@@ -71,8 +62,10 @@ const IngestionActivity: React.FC<IngestionActivityProps> = ({ facet }) => {
   return (
     <Box mt={2} data-testid='ingestion-activity'>
       <Box mb={1}>
-        <MqText subheading>DAILY COMPLETENESS</MqText>
-        <MqText subdued>Completed-day volume compared with the recent active-day baseline.</MqText>
+        <MqText subheading>DAILY COMPLETENESS HISTORY</MqText>
+        <MqText subdued>
+          Recent completed days compared with each table&apos;s active-day baseline.
+        </MqText>
       </Box>
       <Table size='small'>
         <TableHead>

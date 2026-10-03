@@ -1,107 +1,114 @@
 // Copyright 2018-2024 contributors to the Marquez project
 // SPDX-License-Identifier: Apache-2.0
 
+import { BarChart } from '@mui/x-charts'
 import { Box } from '@mui/material'
-import { IngestionActivityFacet, IngestionActivityObservation } from './IngestionActivity'
+import { IngestionActivityObservation, getIngestionFacet } from '../../helpers/ingestionActivity'
 import { Run } from '../../types/api'
-import { theme } from '../../helpers/theme'
-import MQTooltip from '../core/tooltip/MQTooltip'
 import MqText from '../core/text/MqText'
+import ParentSize from '@visx/responsive/lib/components/ParentSize'
 import React from 'react'
 
 interface IngestionTrendProps {
   runs: Run[]
+  table?: string
+  task?: string
 }
 
 interface TrendPoint extends IngestionActivityObservation {
   runId: string
+  timestamp?: string
 }
 
-const FACET_NAME = 'chartmetric_ingestionActivity'
-const BAR_HEIGHT = 48
+const DETAIL_RUNS = 20
 
-const getFacet = (run: Run) => {
-  const facets = run.facets as { [key: string]: object }
-  return facets?.[FACET_NAME] as IngestionActivityFacet | undefined
-}
+const pointCount = (point: TrendPoint) => point.run_activity?.ingested_count ?? 0
 
-const pointColor = (point: TrendPoint) => {
-  if (point.run_activity?.status === 'error') {
-    return theme.palette.error.main
-  }
-  return theme.palette.primary.main
-}
+const formatTimestamp = (timestamp?: string) =>
+  timestamp
+    ? new Date(timestamp).toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : 'Unknown'
 
-const IngestionTrend: React.FC<IngestionTrendProps> = ({ runs }) => {
+const IngestionTrend: React.FC<IngestionTrendProps> = ({
+  runs,
+  table: selectedTable,
+  task: selectedTask,
+}) => {
   const series = new Map<string, TrendPoint[]>()
 
-  ;[...runs].reverse().forEach((run) => {
-    getFacet(run)?.observations?.forEach((observation) => {
+  ;[...runs.slice(0, DETAIL_RUNS)].reverse().forEach((run) => {
+    getIngestionFacet(run)?.observations?.forEach((observation) => {
       const table = observation.expectation?.table || 'unknown'
-      if (observation.run_activity) {
-        series.set(table, [...(series.get(table) || []), { ...observation, runId: run.id }])
-      }
+      if (selectedTable && table !== selectedTable) return
+      if (
+        selectedTask &&
+        observation.run_activity?.task_id &&
+        observation.run_activity.task_id !== selectedTask
+      )
+        return
+      if (typeof observation.run_activity?.ingested_count !== 'number') return
+      series.set(table, [
+        ...(series.get(table) || []),
+        { ...observation, runId: run.id, timestamp: run.endedAt || run.startedAt },
+      ])
     })
   })
 
   if (series.size === 0) {
-    return null
+    return (
+      <Box mt={2} border={1} borderColor='divider' borderRadius={1} p={3} minHeight={280}>
+        <MqText subheading>RECENT RUN ACTIVITY</MqText>
+        <Box height={200} display='flex' alignItems='center' justifyContent='center'>
+          <MqText subdued>Waiting for task-level run metrics.</MqText>
+        </Box>
+      </Box>
+    )
   }
 
   return (
-    <Box mt={2}>
-      <MqText subheading>RECENT INGESTION</MqText>
+    <Box mt={2} border={1} borderColor='divider' borderRadius={1} p={2}>
+      <MqText subheading>RECENT RUN ACTIVITY</MqText>
+      <MqText subdued>Rows ingested during each of the latest 20 task execution windows.</MqText>
       {[...series.entries()].map(([table, points]) => {
-        const maxCount = Math.max(
-          ...points.map((point) => point.run_activity?.ingested_count || 0),
-          1
-        )
+        const slots: Array<TrendPoint | undefined> = [
+          ...points,
+          ...Array<undefined>(DETAIL_RUNS - points.length).fill(undefined),
+        ]
         return (
-          <Box key={table} display='flex' alignItems='flex-end' mt={1} mb={2}>
-            <Box width={220} mr={2}>
-              <MqText font='mono'>{table}</MqText>
-              <MqText subdued small>{`LAST ${points.length} OBSERVATIONS`}</MqText>
-            </Box>
-            <Box display='flex' height={BAR_HEIGHT} alignItems='flex-end'>
-              {points.map((point) => (
-                <MQTooltip
-                  key={point.runId}
-                  title={
-                    <>
-                      <MqText subdued small>
-                        WINDOW
-                      </MqText>
-                      <MqText bold>
-                        {point.run_activity?.window_start
-                          ? new Date(point.run_activity.window_start).toLocaleString()
-                          : 'Unknown'}
-                      </MqText>
-                      <MqText>
-                        {point.run_activity?.window_end
-                          ? new Date(point.run_activity.window_end).toLocaleString()
-                          : 'Unknown'}
-                      </MqText>
-                      <MqText>
-                        {(point.run_activity?.ingested_count || 0).toLocaleString('en-US')} rows
-                      </MqText>
-                    </>
-                  }
-                >
-                  <Box
-                    bgcolor={pointColor(point)}
-                    height={Math.max(
-                      ((point.run_activity?.ingested_count || 0) / maxCount) * BAR_HEIGHT,
-                      2
-                    )}
-                    width={12}
-                    mr={0.75}
-                    sx={{
-                      borderTopLeftRadius: theme.shape.borderRadius,
-                      borderTopRightRadius: theme.shape.borderRadius,
-                    }}
+          <Box key={table} mt={1}>
+            <MqText subdued small>{`${points.length} OF ${DETAIL_RUNS} RUNS REPORTING`}</MqText>
+            <Box height={300}>
+              <ParentSize>
+                {(parent) => (
+                  <BarChart
+                    width={parent.width}
+                    height={parent.height}
+                    series={[
+                      {
+                        data: slots.map((point) => (point ? pointCount(point) : null)),
+                        label: table,
+                        valueFormatter: (value) =>
+                          value === null ? '' : `${value.toLocaleString('en-US')} rows`,
+                      },
+                    ]}
+                    xAxis={[
+                      {
+                        data: slots.map((point, index) =>
+                          point ? formatTimestamp(point.timestamp) : `empty-${index}`
+                        ),
+                        scaleType: 'band',
+                        valueFormatter: (value) => (value.startsWith('empty-') ? '' : value),
+                      },
+                    ]}
+                    margin={{ left: 80, right: 24, top: 32, bottom: 52 }}
                   />
-                </MQTooltip>
-              ))}
+                )}
+              </ParentSize>
             </Box>
           </Box>
         )

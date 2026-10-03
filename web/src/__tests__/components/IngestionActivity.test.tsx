@@ -24,7 +24,7 @@ describe('IngestionActivity', () => {
       />
     )
 
-    expect(screen.getByText('DAILY COMPLETENESS')).toBeTruthy()
+    expect(screen.getByText('DAILY COMPLETENESS HISTORY')).toBeTruthy()
     expect(screen.getByText('acr_track_stat')).toBeTruthy()
     expect(screen.getByText('1,048,930')).toBeTruthy()
     expect(screen.getByText('100%')).toBeTruthy()
