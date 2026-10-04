@@ -46,7 +46,10 @@ const makeJob = (latest: number, history: number[], mode: 'stable' | 'variable' 
   ({
     name: 'Example.ObserveIngestionActivity',
     namespace: 'airflow-example',
-    runs: [makeRun(latest, mode, 'latest'), ...history.map((count, index) => makeRun(count, undefined, `${index}`))],
+    runs: [
+      makeRun(latest, mode, 'latest'),
+      ...history.map((count, index) => makeRun(count, undefined, `${index}`)),
+    ],
   } as ActivityJob)
 
 describe('getVolumeHealth', () => {
@@ -55,21 +58,33 @@ describe('getVolumeHealth', () => {
     [700, 'LOW'],
     [400, 'CRITICAL'],
   ])('classifies a stable latest count of %s as %s', (latest, expected) => {
-    const health = getVolumeHealth(makeJob(latest, [1000, 1000, 1000, 1000, 1000]), 'example', 'ObserveIngestionActivity')
+    const health = getVolumeHealth(
+      makeJob(latest, [1000, 1000, 1000, 1000, 1000]),
+      'example',
+      'ObserveIngestionActivity'
+    )
 
     expect(health?.label).toBe(expected)
     expect(health?.baseline).toBe(1000)
   })
 
   it('learns until five historical run metrics exist', () => {
-    const health = getVolumeHealth(makeJob(900, [1000, 1000, 1000, 1000]), 'example', 'ObserveIngestionActivity')
+    const health = getVolumeHealth(
+      makeJob(900, [1000, 1000, 1000, 1000]),
+      'example',
+      'ObserveIngestionActivity'
+    )
 
     expect(health?.label).toBe('LEARNING')
     expect(health?.sampleCount).toBe(4)
   })
 
   it('does not evaluate threshold health for variable volume', () => {
-    const health = getVolumeHealth(makeJob(0, [100, 0, 200], 'variable'), 'example', 'ObserveIngestionActivity')
+    const health = getVolumeHealth(
+      makeJob(0, [100, 0, 200], 'variable'),
+      'example',
+      'ObserveIngestionActivity'
+    )
 
     expect(health?.label).toBe('VARIABLE')
   })
@@ -182,12 +197,7 @@ describe('backend-specific task outputs', () => {
 
   it('requires an explicit backend for an old URL when several backends match', () => {
     const rows = getActivityRows([job])
-    const backends = getActivityBackends(
-      rows,
-      job,
-      'shared_table',
-      'ObserveIngestionActivity'
-    )
+    const backends = getActivityBackends(rows, job, 'shared_table', 'ObserveIngestionActivity')
 
     expect(resolveActivityBackend(backends)).toBeUndefined()
     expect(resolveActivityBackend(backends, 'clickhouse')).toBe('clickhouse')
@@ -195,12 +205,7 @@ describe('backend-specific task outputs', () => {
 
   it('resolves an old URL when only one backend matches', () => {
     const rows = getActivityRows([job]).filter((row) => row.backend === 'postgres')
-    const backends = getActivityBackends(
-      rows,
-      job,
-      'shared_table',
-      'ObserveIngestionActivity'
-    )
+    const backends = getActivityBackends(rows, job, 'shared_table', 'ObserveIngestionActivity')
 
     expect(resolveActivityBackend(backends)).toBe('postgres')
   })
@@ -243,7 +248,11 @@ describe('backend-specific task outputs', () => {
       ...Array.from({ length: 9 }, (_, index) => makeRun(100, undefined, `recent-${index}`)),
       makeRun(10000, undefined, 'older'),
     ]
-    const health = getVolumeHealth({ ...makeJob(100, []), runs }, 'example', 'ObserveIngestionActivity')
+    const health = getVolumeHealth(
+      { ...makeJob(100, []), runs },
+      'example',
+      'ObserveIngestionActivity'
+    )
 
     expect(health?.baseline).toBe(100)
     expect(health?.sampleCount).toBe(9)
