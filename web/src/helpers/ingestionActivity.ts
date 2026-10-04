@@ -22,6 +22,12 @@ export interface IngestionActivityObservation {
     timestamp_column?: string
     window_end?: string
     window_start?: string
+    volume_expectation?: {
+      critical_ratio?: number
+      mode?: 'stable' | 'variable'
+      table?: string
+      warning_ratio?: number
+    }
   }
   status?: string
 }
@@ -49,6 +55,16 @@ export interface ObservedCount {
 }
 
 export type ActivityStatusLabel = 'ERROR' | 'OBSERVING' | 'SNAPSHOT' | 'NO DATA'
+export type VolumeHealthLabel = 'NORMAL' | 'LOW' | 'CRITICAL' | 'LEARNING' | 'VARIABLE'
+
+export interface VolumeHealth {
+  baseline?: number
+  label: VolumeHealthLabel
+  latest?: number
+  ratio?: number
+  reason: string
+  sampleCount: number
+}
 
 const FACET_NAME = 'chartmetric_ingestionActivity'
 const OBSERVER_TASK = '.ObserveIngestionActivity'
@@ -123,3 +139,75 @@ export const getActivityRows = (jobs: ActivityJob[]): ActivityRow[] =>
     )
     return [...outputs.values()]
   })
+
+const median = (values: number[]) => {
+  const sorted = [...values].sort((left, right) => left - right)
+  const midpoint = Math.floor(sorted.length / 2)
+  return sorted.length % 2
+    ? sorted[midpoint]
+    : (sorted[midpoint - 1] + sorted[midpoint]) / 2
+}
+
+export const getVolumeHealth = (
+  job: ActivityJob,
+  table: string,
+  task: string
+): VolumeHealth | undefined => {
+  const runMetrics = job.runs
+    .map((run) => {
+      const observations = getRowObservations(run, table, task, job.name)
+      return {
+        count: getRunActivityCount(observations),
+        policy: observations.find(
+          (observation) => observation.run_activity?.volume_expectation
+        )?.run_activity?.volume_expectation,
+      }
+    })
+    .filter((metric): metric is typeof metric & { count: number } => metric.count !== undefined)
+  const policy = runMetrics.find((metric) => metric.policy)?.policy
+  if (!policy?.mode || !runMetrics.length) return undefined
+  if (policy.mode === 'variable') {
+    return {
+      label: 'VARIABLE',
+      latest: runMetrics[0].count,
+      reason: 'Run volume varies by design; no threshold is evaluated.',
+      sampleCount: Math.max(runMetrics.length - 1, 0),
+    }
+  }
+
+  const latest = runMetrics[0].count
+  const history = runMetrics.slice(1, 11).map((metric) => metric.count)
+  if (history.length < 5) {
+    return {
+      label: 'LEARNING',
+      latest,
+      reason: `${history.length} of 5 required historical runs are available.`,
+      sampleCount: history.length,
+    }
+  }
+  const baseline = median(history)
+  if (baseline === 0) {
+    return {
+      baseline,
+      label: 'LEARNING',
+      latest,
+      reason: 'The recent median is zero, so volume health cannot be evaluated.',
+      sampleCount: history.length,
+    }
+  }
+
+  const ratio = latest / baseline
+  const warningRatio = policy.warning_ratio ?? 0.8
+  const criticalRatio = policy.critical_ratio ?? 0.5
+  const label = ratio < criticalRatio ? 'CRITICAL' : ratio < warningRatio ? 'LOW' : 'NORMAL'
+  return {
+    baseline,
+    label,
+    latest,
+    ratio,
+    reason: `${Math.round(ratio * 100)}% of the recent ${history.length}-run median (${Math.round(
+      latest
+    ).toLocaleString('en-US')} vs ${Math.round(baseline).toLocaleString('en-US')} rows).`,
+    sampleCount: history.length,
+  }
+}

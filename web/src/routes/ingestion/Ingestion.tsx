@@ -6,15 +6,25 @@ import {
   ActivityRow,
   ActivityStatusLabel,
   IngestionActivityObservation,
+  VolumeHealthLabel,
   getActivityRows,
   getActivityStatus,
   getIngestionFacet,
   getJobParts,
   getObservedCount,
   getRowObservations,
+  getVolumeHealth,
 } from '../../helpers/ingestionActivity'
 import { ArrowBackIosRounded } from '@mui/icons-material'
-import { Box, Button, CircularProgress, Container, IconButton, TextField } from '@mui/material'
+import {
+  Box,
+  Button,
+  CircularProgress,
+  Container,
+  IconButton,
+  MenuItem,
+  TextField,
+} from '@mui/material'
 import { Runs, Search } from '../../types/api'
 import { formatUpdatedAt } from '../../helpers'
 import { getRuns } from '../../store/requests/jobs'
@@ -27,6 +37,7 @@ import IngestionTrend from '../../components/jobs/IngestionTrend'
 import MqEmpty from '../../components/core/empty/MqEmpty'
 import MqStatus from '../../components/core/status/MqStatus'
 import MqText from '../../components/core/text/MqText'
+import MQTooltip from '../../components/core/tooltip/MQTooltip'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 
 const REFRESH_INTERVAL_MS = 30000
@@ -45,6 +56,14 @@ const STATUS_DETAILS: Record<ActivityStatusLabel, { color: string; description: 
   },
 }
 const STATUS_ORDER: ActivityStatusLabel[] = ['OBSERVING', 'SNAPSHOT', 'ERROR', 'NO DATA']
+const HEALTH_DETAILS: Record<VolumeHealthLabel, { color: string; description: string }> = {
+  NORMAL: { color: theme.palette.primary.main, description: 'Within the recent run baseline' },
+  LOW: { color: theme.palette.warning.main, description: 'Below the warning threshold' },
+  CRITICAL: { color: theme.palette.error.main, description: 'Below the critical threshold' },
+  LEARNING: { color: theme.palette.info.main, description: 'Collecting baseline history' },
+  VARIABLE: { color: theme.palette.secondary.main, description: 'Volume varies by design' },
+}
+const HEALTH_ORDER: VolumeHealthLabel[] = ['NORMAL', 'LOW', 'CRITICAL', 'LEARNING', 'VARIABLE']
 
 const activityStatus = (observations: IngestionActivityObservation[]) => {
   const label = getActivityStatus(observations)
@@ -56,6 +75,9 @@ const Ingestion: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [namespace, setNamespace] = useState('')
+  const [statusFilters, setStatusFilters] = useState<ActivityStatusLabel[]>([])
+  const [healthFilters, setHealthFilters] = useState<VolumeHealthLabel[]>([])
   const [searchParams, setSearchParams] = useSearchParams()
 
   const loadActivity = useCallback(async () => {
@@ -89,6 +111,10 @@ const Ingestion: React.FC = () => {
   }, [loadActivity])
 
   const rows = useMemo<ActivityRow[]>(() => getActivityRows(jobs), [jobs])
+  const namespaces = useMemo(
+    () => [...new Set(jobs.map((job) => job.namespace))].sort(),
+    [jobs]
+  )
 
   if (isLoading)
     return (
@@ -107,6 +133,9 @@ const Ingestion: React.FC = () => {
       ? getRowObservations(selectedJob.run, selectedTable, selectedTask, selectedJob.name)
       : getIngestionFacet(selectedJob.run)?.observations || []
     const status = activityStatus(observations)
+    const health = selectedTable
+      ? getVolumeHealth(selectedJob, selectedTable, selectedTask)
+      : undefined
     const labels = getJobParts(selectedJob.name)
     const completenessByDay = new Map<string, IngestionActivityObservation>()
     selectedJob.runs.forEach((run) =>
@@ -138,8 +167,33 @@ const Ingestion: React.FC = () => {
               </MqText>
             </Box>
           </Box>
-          <MqStatus color={status.color} label={status.label} />
+          <Box display='flex' gap={1}>
+            <MqStatus color={status.color} label={status.label} />
+            {health && (
+              <MQTooltip title={health.reason}>
+                <Box>
+                  <MqStatus color={HEALTH_DETAILS[health.label].color} label={health.label} />
+                </Box>
+              </MQTooltip>
+            )}
+          </Box>
         </Box>
+        {health && (
+          <Box border={1} borderColor='divider' borderRadius={1} p={2} mb={2}>
+            <Box display='flex' justifyContent='space-between' alignItems='center' mb={1}>
+              <MqText subheading>VOLUME HEALTH</MqText>
+              <MqStatus color={HEALTH_DETAILS[health.label].color} label={health.label} />
+            </Box>
+            <MqText>{health.reason}</MqText>
+            {health.baseline !== undefined && (
+              <MqText subdued>
+                {`Latest ${health.latest?.toLocaleString('en-US')} · Median ${Math.round(
+                  health.baseline
+                ).toLocaleString('en-US')} · ${health.sampleCount} historical runs`}
+              </MqText>
+            )}
+          </Box>
+        )}
         <IngestionTrend runs={selectedJob.runs} table={selectedTable} task={selectedTask} />
         <IngestionActivity
           observations={[...completenessByDay.values()]}
@@ -153,16 +207,31 @@ const Ingestion: React.FC = () => {
   const normalizedQuery = query.trim().toLowerCase()
   const filteredRows = rows.filter(({ job, table, task }) => {
     const labels = getJobParts(job.name)
-    return [labels.dag, task, table].some((value) => value.toLowerCase().includes(normalizedQuery))
+    const status = getActivityStatus(getRowObservations(job.run, table, task, job.name))
+    const health = getVolumeHealth(job, table, task)?.label
+    return (
+      (!namespace || job.namespace === namespace) &&
+      (!statusFilters.length || statusFilters.includes(status)) &&
+      (!healthFilters.length || (health !== undefined && healthFilters.includes(health))) &&
+      [labels.dag, task, table, job.namespace].some((value) =>
+        value.toLowerCase().includes(normalizedQuery)
+      )
+    )
   })
   const reportingCount = rows.filter(
     ({ job, table, task }) =>
       getObservedCount(getRowObservations(job.run, table, task, job.name)) !== undefined
   ).length
   const attentionCount = rows.filter(
-    ({ job, table, task }) =>
-      activityStatus(getRowObservations(job.run, table, task, job.name)).label === 'ERROR'
+    ({ job, table, task }) => {
+      const status = activityStatus(getRowObservations(job.run, table, task, job.name)).label
+      const health = getVolumeHealth(job, table, task)?.label
+      return status === 'ERROR' || health === 'LOW' || health === 'CRITICAL'
+    }
   ).length
+
+  const toggleFilter = <T,>(value: T, values: T[], setValues: (values: T[]) => void) =>
+    setValues(values.includes(value) ? values.filter((item) => item !== value) : [...values, value])
 
   return (
     <Container maxWidth='lg'>
@@ -187,20 +256,45 @@ const Ingestion: React.FC = () => {
           </Box>
         ))}
       </Box>
-      <TextField
-        fullWidth
-        size='small'
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder='Search DAG, task, or target table'
-        sx={{ mb: 2 }}
-      />
+      <Box display='flex' gap={2} mb={2}>
+        <TextField
+          fullWidth
+          size='small'
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder='Search DAG, task, target table, or Airflow server'
+        />
+        <TextField
+          select
+          size='small'
+          value={namespace}
+          onChange={(event) => setNamespace(event.target.value)}
+          sx={{ minWidth: 220 }}
+        >
+          <MenuItem value=''>ALL AIRFLOW SERVERS</MenuItem>
+          {namespaces.map((item) => (
+            <MenuItem key={item} value={item}>
+              {item}
+            </MenuItem>
+          ))}
+        </TextField>
+      </Box>
       <Box display='flex' alignItems='center' gap={2} mb={2} flexWrap='wrap'>
         <MqText subdued>STATUS</MqText>
         {STATUS_ORDER.map((label) => {
           const { color, description } = STATUS_DETAILS[label]
           return (
-            <Box key={label} display='flex' alignItems='center' gap={0.75}>
+            <Box
+              key={label}
+              display='flex'
+              alignItems='center'
+              gap={0.75}
+              onClick={() => toggleFilter(label, statusFilters, setStatusFilters)}
+              sx={{
+                cursor: 'pointer',
+                opacity: statusFilters.length && !statusFilters.includes(label) ? 0.45 : 1,
+              }}
+            >
               <MqStatus color={color} label={label} />
               <MqText subdued small>
                 {description}
@@ -209,18 +303,49 @@ const Ingestion: React.FC = () => {
           )
         })}
       </Box>
-      <Box display='grid' gridTemplateColumns='2fr 1.5fr 1.25fr 1fr auto' px={2} mb={1}>
+      <Box display='flex' alignItems='center' gap={2} mb={2} flexWrap='wrap'>
+        <MqText subdued>HEALTH</MqText>
+        {HEALTH_ORDER.map((label) => {
+          const { color, description } = HEALTH_DETAILS[label]
+          return (
+            <Box
+              key={label}
+              display='flex'
+              alignItems='center'
+              gap={0.75}
+              onClick={() => toggleFilter(label, healthFilters, setHealthFilters)}
+              sx={{
+                cursor: 'pointer',
+                opacity: healthFilters.length && !healthFilters.includes(label) ? 0.45 : 1,
+              }}
+            >
+              <MqStatus color={color} label={label} />
+              <MqText subdued small>
+                {description}
+              </MqText>
+            </Box>
+          )
+        })}
+      </Box>
+      <Box
+        display='grid'
+        gridTemplateColumns='2fr 1.5fr 1.25fr 1fr 0.75fr 0.75fr'
+        px={2}
+        mb={1}
+      >
         <MqText subdued>DAG / TASK</MqText>
         <MqText subdued>TARGET TABLE</MqText>
         <MqText subdued>RECENT 10 RUNS</MqText>
         <MqText subdued>LATEST</MqText>
         <MqText subdued>STATUS</MqText>
+        <MqText subdued>HEALTH</MqText>
       </Box>
       {error && <MqEmpty title='Ingestion activity unavailable' body={error} />}
       {!error &&
         filteredRows.map(({ job, table, task }) => {
           const observations = getRowObservations(job.run, table, task, job.name)
           const status = activityStatus(observations)
+          const health = getVolumeHealth(job, table, task)
           const activity = getObservedCount(observations)
           const labels = getJobParts(job.name)
           return (
@@ -238,12 +363,13 @@ const Ingestion: React.FC = () => {
             >
               <Box
                 display='grid'
-                gridTemplateColumns='2fr 1.5fr 1.25fr 1fr auto'
+                gridTemplateColumns='2fr 1.5fr 1.25fr 1fr 0.75fr 0.75fr'
                 alignItems='center'
               >
                 <Box>
                   <MqText font='mono'>{labels.dag}</MqText>
                   <MqText subdued>{task}</MqText>
+                  <MqText subdued>{job.namespace}</MqText>
                   <MqText subdued>
                     {job.run
                       ? formatUpdatedAt(job.run.endedAt || job.run.startedAt)
@@ -261,6 +387,15 @@ const Ingestion: React.FC = () => {
                   </MqText>
                 </Box>
                 <MqStatus color={status.color} label={status.label} />
+                {health ? (
+                  <MQTooltip title={health.reason}>
+                    <Box>
+                      <MqStatus color={HEALTH_DETAILS[health.label].color} label={health.label} />
+                    </Box>
+                  </MQTooltip>
+                ) : (
+                  <MqText subdued>—</MqText>
+                )}
               </Box>
             </Box>
           )
