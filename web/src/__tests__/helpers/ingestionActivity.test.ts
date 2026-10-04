@@ -4,11 +4,13 @@
 import {
   ActivityJob,
   getActivityRows,
+  getActivityBackends,
   getAirflowServer,
   getRowObservations,
   getRunActivityCount,
   getVolumeHealth,
   mergeActivityJobs,
+  resolveActivityBackend,
 } from '../../helpers/ingestionActivity'
 import { Run } from '../../types/api'
 
@@ -174,6 +176,31 @@ describe('backend-specific task outputs', () => {
 
     expect(getRunActivityCount(postgres)).toBe(10)
     expect(getRunActivityCount(clickhouse)).toBe(20)
+  })
+
+  it('requires an explicit backend for an old URL when several backends match', () => {
+    const rows = getActivityRows([job])
+    const backends = getActivityBackends(
+      rows,
+      job,
+      'shared_table',
+      'ObserveIngestionActivity'
+    )
+
+    expect(resolveActivityBackend(backends)).toBeUndefined()
+    expect(resolveActivityBackend(backends, 'clickhouse')).toBe('clickhouse')
+  })
+
+  it('resolves an old URL when only one backend matches', () => {
+    const rows = getActivityRows([job]).filter((row) => row.backend === 'postgres')
+    const backends = getActivityBackends(
+      rows,
+      job,
+      'shared_table',
+      'ObserveIngestionActivity'
+    )
+
+    expect(resolveActivityBackend(backends)).toBe('postgres')
   })
 })
 

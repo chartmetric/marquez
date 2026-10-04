@@ -143,6 +143,17 @@ export const getRunActivityCount = (observations: IngestionActivityObservation[]
   return counts.length ? counts.reduce((sum, count) => sum + count, 0) : undefined
 }
 
+export const getActivityError = (observations: IngestionActivityObservation[]) =>
+  observations
+    .map(
+      (observation) =>
+        observation.run_activity?.error ||
+        observation.run_activity?.volume_expectation_error ||
+        observation.volume_expectation_error ||
+        observation.error
+    )
+    .find((error): error is string => Boolean(error))
+
 export const getObservedCount = (
   observations: IngestionActivityObservation[]
 ): ObservedCount | undefined => {
@@ -188,6 +199,31 @@ export const getActivityRows = (jobs: ActivityJob[]): ActivityRow[] =>
     return [...outputs.values()]
   })
 
+export const getActivityBackends = (
+  rows: ActivityRow[],
+  job: ActivityJob,
+  table: string | undefined,
+  task: string
+) =>
+  [
+    ...new Set(
+      rows
+        .filter(
+          (row) =>
+            row.job.name === job.name &&
+            row.job.namespace === job.namespace &&
+            row.table === table &&
+            row.task === task
+        )
+        .map((row) => row.backend)
+    ),
+  ].sort()
+
+export const resolveActivityBackend = (backends: string[], requested?: string) => {
+  if (requested && backends.includes(requested)) return requested
+  return backends.length === 1 ? backends[0] : undefined
+}
+
 const median = (values: number[]) => {
   const sorted = [...values].sort((left, right) => left - right)
   const midpoint = Math.floor(sorted.length / 2)
@@ -209,9 +245,9 @@ export const getVolumeHealth = (
 
   const history = job.runs
     .slice(1)
+    .slice(0, 10)
     .map((run) => getRunActivityCount(getRowObservations(run, table, task, job.name, backend)))
     .filter((count): count is number => count !== undefined)
-    .slice(0, 10)
   if (policy.mode === 'variable') {
     return {
       label: 'VARIABLE',
