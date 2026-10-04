@@ -10,7 +10,8 @@ export const getJobs = async (
   namespace: Nullable<string>,
   limit = 25,
   offset = 0,
-  lastRunStates?: RunState
+  lastRunStates?: RunState,
+  includeRunDetails = true
 ) => {
   let url = `${API_URL}/jobs?limit=${limit}&offset=${offset}`
   if (namespace) {
@@ -20,6 +21,7 @@ export const getJobs = async (
   if (lastRunStates) {
     url += `&lastRunStates=${lastRunStates}`
   }
+  url += `&includeRunDetails=${includeRunDetails}`
   return genericFetchWrapper(url, { method: 'GET' }, 'fetchJobs').then((r: Jobs) => {
     return { totalCount: r.totalCount, jobs: r.jobs }
   })

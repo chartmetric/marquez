@@ -19,11 +19,12 @@ import java.util.TimeZone;
 import java.util.UUID;
 import marquez.common.Utils;
 import marquez.common.models.JobType;
+import marquez.common.models.RunState;
 import marquez.db.Columns;
 import marquez.service.models.Job;
 import org.jdbi.v3.core.statement.StatementContext;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.postgresql.util.PGobject;
 
@@ -37,8 +38,8 @@ class JobMapperTest {
       [{"jobType": {"jobType": "QUERY", "integration": "FLINK", "processingType": "STREAMING"}}]
       """;
 
-  @BeforeAll
-  public static void setUp() throws SQLException, MalformedURLException {
+  @BeforeEach
+  public void setUp() throws SQLException, MalformedURLException {
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
     resultSet = mock(ResultSet.class);
     when(resultSet.getMetaData()).thenReturn(mock(ResultSetMetaData.class));
@@ -113,5 +114,75 @@ class JobMapperTest {
 
     assertThat(actual.getType()).isEqualTo(JobType.STREAM);
     assertThat(actual.getLabels()).containsExactly("QUERY", "FLINK");
+  }
+
+  @Test
+  void shouldMapLatestRunSummary() throws SQLException {
+    ResultSetMetaData metadata = mock(ResultSetMetaData.class);
+    String[] columns = {
+      "latest_run_uuid",
+      "latest_run_created_at",
+      "latest_run_updated_at",
+      "latest_run_nominal_start_time",
+      "latest_run_nominal_end_time",
+      "latest_run_current_run_state",
+      "latest_run_started_at",
+      "latest_run_ended_at",
+      "latest_run_namespace_name",
+      "latest_run_job_name",
+      "latest_run_job_version",
+      "latest_run_location"
+    };
+    when(metadata.getColumnCount()).thenReturn(columns.length);
+    for (int index = 0; index < columns.length; index++) {
+      when(metadata.getColumnName(index + 1)).thenReturn(columns[index]);
+    }
+    when(resultSet.getMetaData()).thenReturn(metadata);
+
+    UUID runUuid = UUID.fromString("748eb75a-6c2f-4f8d-8946-00910da5458e");
+    when(resultSet.getObject("latest_run_uuid")).thenReturn(runUuid);
+    when(resultSet.getObject("latest_run_uuid", UUID.class)).thenReturn(runUuid);
+    when(resultSet.getObject("latest_run_created_at"))
+        .thenReturn(Timestamp.valueOf("2000-01-03 00:00:00"));
+    when(resultSet.getTimestamp("latest_run_created_at"))
+        .thenReturn(Timestamp.valueOf("2000-01-03 00:00:00"));
+    when(resultSet.getObject("latest_run_updated_at"))
+        .thenReturn(Timestamp.valueOf("2000-01-03 00:01:00"));
+    when(resultSet.getTimestamp("latest_run_updated_at"))
+        .thenReturn(Timestamp.valueOf("2000-01-03 00:01:00"));
+    when(resultSet.getObject("latest_run_current_run_state")).thenReturn("COMPLETED");
+    when(resultSet.getString("latest_run_current_run_state")).thenReturn("COMPLETED");
+    when(resultSet.getObject("latest_run_started_at"))
+        .thenReturn(Timestamp.valueOf("2000-01-03 00:00:00"));
+    when(resultSet.getTimestamp("latest_run_started_at"))
+        .thenReturn(Timestamp.valueOf("2000-01-03 00:00:00"));
+    when(resultSet.getObject("latest_run_ended_at"))
+        .thenReturn(Timestamp.valueOf("2000-01-03 00:01:00"));
+    when(resultSet.getTimestamp("latest_run_ended_at"))
+        .thenReturn(Timestamp.valueOf("2000-01-03 00:01:00"));
+    when(resultSet.getObject("latest_run_namespace_name")).thenReturn("NAMESPACE");
+    when(resultSet.getString("latest_run_namespace_name")).thenReturn("NAMESPACE");
+    when(resultSet.getObject("latest_run_job_name")).thenReturn("NAME");
+    when(resultSet.getString("latest_run_job_name")).thenReturn("NAME");
+
+    Job actual = new JobMapper().map(resultSet, mock(StatementContext.class));
+
+    assertThat(actual.getLatestRun()).isPresent();
+    assertThat(actual.getLatestRun().orElseThrow().getId().getValue()).isEqualTo(runUuid);
+    assertThat(actual.getLatestRun().orElseThrow().getState()).isEqualTo(RunState.COMPLETED);
+    assertThat(actual.getLatestRun().orElseThrow().getDurationMs()).contains(60_000L);
+  }
+
+  @Test
+  void shouldMapMissingLatestRunSummary() throws SQLException {
+    ResultSetMetaData metadata = mock(ResultSetMetaData.class);
+    when(metadata.getColumnCount()).thenReturn(1);
+    when(metadata.getColumnName(1)).thenReturn("latest_run_uuid");
+    when(resultSet.getMetaData()).thenReturn(metadata);
+    when(resultSet.getObject("latest_run_uuid")).thenReturn(null);
+
+    Job actual = new JobMapper().map(resultSet, mock(StatementContext.class));
+
+    assertThat(actual.getLatestRun()).isEmpty();
   }
 }

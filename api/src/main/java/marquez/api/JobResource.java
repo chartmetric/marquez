@@ -168,9 +168,10 @@ public class JobResource extends BaseResource {
   @Produces(APPLICATION_JSON)
   public Response list(
       @QueryParam("lastRunStates") List<RunState> lastRunStates,
+      @QueryParam("includeRunDetails") @DefaultValue("true") boolean includeRunDetails,
       @QueryParam("limit") @DefaultValue("100") @Min(value = 0) int limit,
       @QueryParam("offset") @DefaultValue("0") @Min(value = 0) int offset) {
-    return list(null, lastRunStates, limit, offset);
+    return list(null, lastRunStates, includeRunDetails, limit, offset);
   }
 
   @Timed
@@ -182,6 +183,7 @@ public class JobResource extends BaseResource {
   public Response list(
       @PathParam("namespace") NamespaceName namespaceName,
       @QueryParam("lastRunStates") List<RunState> lastRunStates,
+      @QueryParam("includeRunDetails") @DefaultValue("true") boolean includeRunDetails,
       @QueryParam("limit") @DefaultValue("100") @Min(value = 0) int limit,
       @QueryParam("offset") @DefaultValue("0") @Min(value = 0) int offset) {
     final Optional<NamespaceName> namespaceOrNull = Optional.ofNullable(namespaceName);
@@ -193,7 +195,12 @@ public class JobResource extends BaseResource {
       Collections.addAll(lastRunStates, RunState.values());
     }
 
-    final List<Job> jobs = jobService.findAllWithRun(namespace, lastRunStates, limit, offset);
+    // Summary mode retains state and timing from the job's current run. Recent run history and
+    // run-derived args, facets, and dataset versions are returned as empty values.
+    final List<Job> jobs =
+        includeRunDetails
+            ? jobService.findAllWithRun(namespace, lastRunStates, limit, offset)
+            : jobService.findAll(namespace, lastRunStates, limit, offset);
     final int totalCount = jobService.countFor(namespace);
     return Response.ok(new ResultsPage<>("jobs", jobs, totalCount)).build();
   }
