@@ -168,10 +168,10 @@ public class JobResource extends BaseResource {
   @Produces(APPLICATION_JSON)
   public Response list(
       @QueryParam("lastRunStates") List<RunState> lastRunStates,
-      @QueryParam("includeRunHistory") @DefaultValue("true") boolean includeRunHistory,
+      @QueryParam("includeRunDetails") @DefaultValue("true") boolean includeRunDetails,
       @QueryParam("limit") @DefaultValue("100") @Min(value = 0) int limit,
       @QueryParam("offset") @DefaultValue("0") @Min(value = 0) int offset) {
-    return list(null, lastRunStates, includeRunHistory, limit, offset);
+    return list(null, lastRunStates, includeRunDetails, limit, offset);
   }
 
   @Timed
@@ -183,7 +183,7 @@ public class JobResource extends BaseResource {
   public Response list(
       @PathParam("namespace") NamespaceName namespaceName,
       @QueryParam("lastRunStates") List<RunState> lastRunStates,
-      @QueryParam("includeRunHistory") @DefaultValue("true") boolean includeRunHistory,
+      @QueryParam("includeRunDetails") @DefaultValue("true") boolean includeRunDetails,
       @QueryParam("limit") @DefaultValue("100") @Min(value = 0) int limit,
       @QueryParam("offset") @DefaultValue("0") @Min(value = 0) int offset) {
     final Optional<NamespaceName> namespaceOrNull = Optional.ofNullable(namespaceName);
@@ -195,8 +195,10 @@ public class JobResource extends BaseResource {
       Collections.addAll(lastRunStates, RunState.values());
     }
 
+    // Summary mode retains latest-run state and timing, but omits recent run history and
+    // run-derived dataset enrichment used by the dashboard and job detail views.
     final List<Job> jobs =
-        includeRunHistory
+        includeRunDetails
             ? jobService.findAllWithRun(namespace, lastRunStates, limit, offset)
             : jobService.findAll(namespace, lastRunStates, limit, offset);
     final int totalCount = jobService.countFor(namespace);

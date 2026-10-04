@@ -24,7 +24,7 @@ import marquez.db.Columns;
 import marquez.service.models.Job;
 import org.jdbi.v3.core.statement.StatementContext;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.postgresql.util.PGobject;
 
@@ -38,8 +38,8 @@ class JobMapperTest {
       [{"jobType": {"jobType": "QUERY", "integration": "FLINK", "processingType": "STREAMING"}}]
       """;
 
-  @BeforeAll
-  public static void setUp() throws SQLException, MalformedURLException {
+  @BeforeEach
+  public void setUp() throws SQLException, MalformedURLException {
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
     resultSet = mock(ResultSet.class);
     when(resultSet.getMetaData()).thenReturn(mock(ResultSetMetaData.class));
