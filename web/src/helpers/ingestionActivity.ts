@@ -68,6 +68,30 @@ export interface VolumeHealth {
 
 const FACET_NAME = 'chartmetric_ingestionActivity'
 const OBSERVER_TASK = '.ObserveIngestionActivity'
+const LEGACY_DEFAULT_NAMESPACE = 'default'
+const LEGACY_DEFAULT_AIRFLOW_SERVER = 'airflow-data-script'
+
+export const getAirflowServer = (namespace: string) =>
+  namespace === LEGACY_DEFAULT_NAMESPACE ? LEGACY_DEFAULT_AIRFLOW_SERVER : namespace
+
+export const mergeActivityJobs = (jobs: ActivityJob[], runLimit: number): ActivityJob[] => {
+  const mergedJobs = new Map<string, ActivityJob>()
+  jobs.forEach((job) => {
+    const namespace = getAirflowServer(job.namespace)
+    const key = `${namespace}:${job.name}`
+    const existing = mergedJobs.get(key)
+    const runs = [...(existing?.runs || []), ...job.runs].sort((left, right) =>
+      right.startedAt.localeCompare(left.startedAt)
+    )
+    mergedJobs.set(key, {
+      name: job.name,
+      namespace,
+      run: runs[0] || existing?.run || job.run,
+      runs: runs.slice(0, runLimit),
+    })
+  })
+  return [...mergedJobs.values()]
+}
 
 export const getIngestionFacet = (run?: Run) => {
   const facets = run?.facets as { [key: string]: object } | undefined

@@ -14,6 +14,7 @@ import {
   getObservedCount,
   getRowObservations,
   getVolumeHealth,
+  mergeActivityJobs,
 } from '../../helpers/ingestionActivity'
 import { ArrowBackIosRounded } from '@mui/icons-material'
 import {
@@ -98,7 +99,7 @@ const Ingestion: React.FC = () => {
           }
         })
       )
-      setJobs(activityJobs)
+      setJobs(mergeActivityJobs(activityJobs, RUN_FETCH_LIMIT))
       setError(null)
     } catch (_error) {
       setError('Unable to load ingestion activity from Marquez.')

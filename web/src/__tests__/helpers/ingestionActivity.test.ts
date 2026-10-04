@@ -1,7 +1,12 @@
 // Copyright 2018-2024 contributors to the Marquez project
 // SPDX-License-Identifier: Apache-2.0
 
-import { ActivityJob, getVolumeHealth } from '../../helpers/ingestionActivity'
+import {
+  ActivityJob,
+  getAirflowServer,
+  getVolumeHealth,
+  mergeActivityJobs,
+} from '../../helpers/ingestionActivity'
 import { Run } from '../../types/api'
 
 const makeRun = (count: number | undefined, mode?: 'stable' | 'variable', id = String(count)) =>
@@ -102,5 +107,26 @@ describe('getVolumeHealth', () => {
 
     expect(health?.baseline).toBe(100)
     expect(health?.sampleCount).toBe(10)
+  })
+})
+
+describe('Airflow server namespaces', () => {
+  it('uses the known server name for legacy default namespace jobs', () => {
+    expect(getAirflowServer('default')).toBe('airflow-data-script')
+    expect(getAirflowServer('airflow-data-infra')).toBe('airflow-data-infra')
+  })
+
+  it('merges legacy and explicit namespace runs for the same job', () => {
+    const legacy = { ...makeJob(10, []), namespace: 'default' }
+    const current = { ...makeJob(20, []), namespace: 'airflow-data-script' }
+    legacy.runs[0].startedAt = '2026-10-03T00:00:00Z'
+    current.runs[0].startedAt = '2026-10-04T00:00:00Z'
+
+    const merged = mergeActivityJobs([legacy, current], 100)
+
+    expect(merged).toHaveLength(1)
+    expect(merged[0].namespace).toBe('airflow-data-script')
+    expect(merged[0].runs).toHaveLength(2)
+    expect(merged[0].run?.id).toBe('latest')
   })
 })
