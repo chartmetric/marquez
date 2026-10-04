@@ -206,6 +206,10 @@ export const getVolumeHealth = (
       sampleCount: history.length,
     }
   }
+  const warningRatio = policy.warning_ratio ?? 0.8
+  const criticalRatio = policy.critical_ratio ?? 0.5
+  if (criticalRatio < 0 || warningRatio > 1 || criticalRatio >= warningRatio) return undefined
+
   const baseline = median(history)
   if (baseline === 0) {
     return {
@@ -221,9 +225,6 @@ export const getVolumeHealth = (
   }
 
   const ratio = latest / baseline
-  const warningRatio = policy.warning_ratio ?? 0.8
-  const criticalRatio = policy.critical_ratio ?? 0.5
-  if (criticalRatio < 0 || warningRatio > 1 || criticalRatio >= warningRatio) return undefined
   const label = ratio < criticalRatio ? 'CRITICAL' : ratio < warningRatio ? 'LOW' : 'NORMAL'
   return {
     baseline,
