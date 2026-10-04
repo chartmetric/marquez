@@ -11,6 +11,7 @@ import {
   getActivityStatus,
   getIngestionFacet,
   getJobParts,
+  getObservationBackend,
   getObservedCount,
   getRowObservations,
   getVolumeHealth,
@@ -115,11 +116,17 @@ const Ingestion: React.FC = () => {
   const evaluatedRows = useMemo(
     () =>
       rows.map((row) => {
-        const observations = getRowObservations(row.job.run, row.table, row.task, row.job.name)
+        const observations = getRowObservations(
+          row.job.run,
+          row.table,
+          row.task,
+          row.job.name,
+          row.backend
+        )
         return {
           ...row,
           activity: getObservedCount(observations),
-          health: getVolumeHealth(row.job, row.table, row.task),
+          health: getVolumeHealth(row.job, row.table, row.task, row.backend),
           status: activityStatus(observations),
         }
       }),
@@ -142,25 +149,38 @@ const Ingestion: React.FC = () => {
     (job) => job.name === searchParams.get('job') && job.namespace === searchParams.get('namespace')
   )
   const selectedTable = searchParams.get('table') || undefined
+  const selectedBackend = searchParams.get('backend') || undefined
   const selectedTask = searchParams.get('task') || getJobParts(selectedJob?.name || '').task
   if (selectedJob) {
     const observations = selectedTable
-      ? getRowObservations(selectedJob.run, selectedTable, selectedTask, selectedJob.name)
+      ? getRowObservations(
+          selectedJob.run,
+          selectedTable,
+          selectedTask,
+          selectedJob.name,
+          selectedBackend
+        )
       : getIngestionFacet(selectedJob.run)?.observations || []
     const status = activityStatus(observations)
     const health = selectedTable
-      ? getVolumeHealth(selectedJob, selectedTable, selectedTask)
+      ? getVolumeHealth(selectedJob, selectedTable, selectedTask, selectedBackend)
       : undefined
     const labels = getJobParts(selectedJob.name)
     const completenessByDay = new Map<string, IngestionActivityObservation>()
     selectedJob.runs.forEach((run) =>
-      getRowObservations(run, selectedTable || 'unknown', selectedTask, selectedJob.name).forEach(
-        (observation) => {
-          if (!observation.expected_date) return
-          const key = `${observation.expectation?.table || 'unknown'}:${observation.expected_date}`
-          if (!completenessByDay.has(key)) completenessByDay.set(key, observation)
-        }
-      )
+      getRowObservations(
+        run,
+        selectedTable || 'unknown',
+        selectedTask,
+        selectedJob.name,
+        selectedBackend
+      ).forEach((observation) => {
+        if (!observation.expected_date) return
+        const key = `${getObservationBackend(observation)}:${
+          observation.expectation?.table || 'unknown'
+        }:${observation.expected_date}`
+        if (!completenessByDay.has(key)) completenessByDay.set(key, observation)
+      })
     )
     return (
       <Container maxWidth='lg'>
@@ -175,6 +195,7 @@ const Ingestion: React.FC = () => {
               </MqText>
               <MqText subdued>{labels.dag}</MqText>
               {selectedTable && <MqText font='mono'>{selectedTable}</MqText>}
+              {selectedBackend && <MqText subdued>{selectedBackend}</MqText>}
               <MqText subdued>
                 {selectedJob.run
                   ? formatUpdatedAt(selectedJob.run.endedAt || selectedJob.run.startedAt)
@@ -209,8 +230,14 @@ const Ingestion: React.FC = () => {
             )}
           </Box>
         )}
-        <IngestionTrend runs={selectedJob.runs} table={selectedTable} task={selectedTask} />
+        <IngestionTrend
+          backend={selectedBackend}
+          runs={selectedJob.runs}
+          table={selectedTable}
+          task={selectedTask}
+        />
         <IngestionActivity
+          backend={selectedBackend}
           observations={[...completenessByDay.values()]}
           table={selectedTable}
           task={selectedTask}
@@ -220,13 +247,13 @@ const Ingestion: React.FC = () => {
   }
 
   const normalizedQuery = query.trim().toLowerCase()
-  const filteredRows = evaluatedRows.filter(({ job, table, task, status, health }) => {
+  const filteredRows = evaluatedRows.filter(({ backend, job, table, task, status, health }) => {
     const labels = getJobParts(job.name)
     return (
       (!namespace || job.namespace === namespace) &&
       (!statusFilters.length || statusFilters.includes(status.label)) &&
       (!healthFilters.length || (health !== undefined && healthFilters.includes(health.label))) &&
-      [labels.dag, task, table, job.namespace].some((value) =>
+      [labels.dag, task, table, backend, job.namespace].some((value) =>
         value.toLowerCase().includes(normalizedQuery)
       )
     )
@@ -363,14 +390,14 @@ const Ingestion: React.FC = () => {
       </Box>
       {error && <MqEmpty title='Ingestion activity unavailable' body={error} />}
       {!error &&
-        filteredRows.map(({ job, table, task, status, health, activity }) => {
+        filteredRows.map(({ backend, job, table, task, status, health, activity }) => {
           const labels = getJobParts(job.name)
           return (
             <Box
-              key={`${job.namespace}:${job.name}:${task}:${table}`}
+              key={`${job.namespace}:${job.name}:${backend}:${task}:${table}`}
               role='button'
               tabIndex={0}
-              aria-label={`${labels.dag}, ${task}, ${table}, ${job.namespace}, status ${
+              aria-label={`${labels.dag}, ${task}, ${backend}, ${table}, ${job.namespace}, status ${
                 status.label
               }, health ${health?.label || 'not available'}${health ? `, ${health.reason}` : ''}`}
               border={1}
@@ -379,12 +406,12 @@ const Ingestion: React.FC = () => {
               p={2}
               mb={1}
               onClick={() =>
-                setSearchParams({ job: job.name, namespace: job.namespace, table, task })
+                setSearchParams({ job: job.name, namespace: job.namespace, backend, table, task })
               }
               onKeyDown={(event) => {
                 if (event.key !== 'Enter' && event.key !== ' ') return
                 event.preventDefault()
-                setSearchParams({ job: job.name, namespace: job.namespace, table, task })
+                setSearchParams({ job: job.name, namespace: job.namespace, backend, table, task })
               }}
               sx={{ cursor: 'pointer', '&:hover': { backgroundColor: theme.palette.action.hover } }}
             >
@@ -403,8 +430,13 @@ const Ingestion: React.FC = () => {
                       : 'No completed run'}
                   </MqText>
                 </Box>
-                <MqText font='mono'>{table}</MqText>
-                <IngestionRunSparkline job={job} table={table} task={task} />
+                <Box>
+                  <MqText font='mono'>{table}</MqText>
+                  <MqText subdued small>
+                    {backend}
+                  </MqText>
+                </Box>
+                <IngestionRunSparkline backend={backend} job={job} table={table} task={task} />
                 <Box>
                   <MqText subdued>
                     {activity?.runActivity ? 'RUN INGESTED' : 'DAILY SNAPSHOT'}

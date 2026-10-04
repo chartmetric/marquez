@@ -13,16 +13,20 @@ export interface IngestionActivityObservation {
   }
   expected_date?: string
   passed?: boolean
+  volume_expectation_error?: string
   run_activity?: {
+    backend?: string
     error?: string
     ingested_count?: number
     status?: string
     task_id?: string
     task_ids?: string[]
     timestamp_column?: string
+    volume_expectation_error?: string
     window_end?: string
     window_start?: string
     volume_expectation?: {
+      backend?: string
       critical_ratio?: number
       mode?: 'stable' | 'variable'
       table?: string
@@ -44,6 +48,7 @@ export interface ActivityJob {
 }
 
 export interface ActivityRow {
+  backend: string
   job: ActivityJob
   table: string
   task: string
@@ -70,6 +75,7 @@ const FACET_NAME = 'chartmetric_ingestionActivity'
 const OBSERVER_TASK = '.ObserveIngestionActivity'
 const LEGACY_DEFAULT_NAMESPACE = 'default'
 const LEGACY_DEFAULT_AIRFLOW_SERVER = 'airflow-data-script'
+const DEFAULT_BACKEND = 'postgres'
 
 export const getAirflowServer = (namespace: string) =>
   namespace === LEGACY_DEFAULT_NAMESPACE ? LEGACY_DEFAULT_AIRFLOW_SERVER : namespace
@@ -110,16 +116,24 @@ export const getJobParts = (name: string) => {
     : { dag: name.slice(0, separator), task: name.slice(separator + 1) }
 }
 
+export const getObservationBackend = (observation: IngestionActivityObservation) =>
+  observation.expectation?.backend ||
+  observation.run_activity?.backend ||
+  observation.run_activity?.volume_expectation?.backend ||
+  DEFAULT_BACKEND
+
 export const getRowObservations = (
   run: Run | undefined,
   table: string,
   task: string,
-  jobName: string
+  jobName: string,
+  backend?: string
 ) =>
   (getIngestionFacet(run)?.observations || []).filter(
     (observation) =>
       (observation.expectation?.table || 'unknown') === table &&
-      (observation.run_activity?.task_id || getJobParts(jobName).task) === task
+      (observation.run_activity?.task_id || getJobParts(jobName).task) === task &&
+      (!backend || getObservationBackend(observation) === backend)
   )
 
 export const getRunActivityCount = (observations: IngestionActivityObservation[]) => {
@@ -145,7 +159,14 @@ export const getObservedCount = (
 export const getActivityStatus = (
   observations: IngestionActivityObservation[]
 ): ActivityStatusLabel => {
-  if (observations.some((observation) => observation.run_activity?.status === 'error')) {
+  if (
+    observations.some(
+      (observation) =>
+        observation.run_activity?.status === 'error' ||
+        observation.volume_expectation_error ||
+        observation.run_activity?.volume_expectation_error
+    )
+  ) {
     return 'ERROR'
   }
   if (getRunActivityCount(observations) !== undefined) return 'OBSERVING'
@@ -158,9 +179,10 @@ export const getActivityRows = (jobs: ActivityJob[]): ActivityRow[] =>
     const outputs = new Map<string, ActivityRow>()
     job.runs.forEach((run) =>
       getIngestionFacet(run)?.observations?.forEach((observation) => {
+        const backend = getObservationBackend(observation)
         const table = observation.expectation?.table || 'unknown'
         const task = observation.run_activity?.task_id || getJobParts(job.name).task
-        outputs.set(`${task}:${table}`, { job, table, task })
+        outputs.set(`${backend}:${task}:${table}`, { backend, job, table, task })
       })
     )
     return [...outputs.values()]
@@ -175,9 +197,10 @@ const median = (values: number[]) => {
 export const getVolumeHealth = (
   job: ActivityJob,
   table: string,
-  task: string
+  task: string,
+  backend?: string
 ): VolumeHealth | undefined => {
-  const latestObservations = getRowObservations(job.runs[0], table, task, job.name)
+  const latestObservations = getRowObservations(job.runs[0], table, task, job.name, backend)
   const latest = getRunActivityCount(latestObservations)
   const policy = latestObservations.find(
     (observation) => observation.run_activity?.volume_expectation
@@ -186,7 +209,7 @@ export const getVolumeHealth = (
 
   const history = job.runs
     .slice(1)
-    .map((run) => getRunActivityCount(getRowObservations(run, table, task, job.name)))
+    .map((run) => getRunActivityCount(getRowObservations(run, table, task, job.name, backend)))
     .filter((count): count is number => count !== undefined)
     .slice(0, 10)
   if (policy.mode === 'variable') {

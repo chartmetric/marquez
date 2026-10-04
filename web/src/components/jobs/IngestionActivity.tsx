@@ -5,6 +5,7 @@ import { Box, Table, TableBody, TableCell, TableHead, TableRow } from '@mui/mate
 import {
   IngestionActivityFacet,
   IngestionActivityObservation,
+  getObservationBackend,
 } from '../../helpers/ingestionActivity'
 import { theme } from '../../helpers/theme'
 import MqStatus from '../core/status/MqStatus'
@@ -12,6 +13,7 @@ import MqText from '../core/text/MqText'
 import React from 'react'
 
 interface IngestionActivityProps {
+  backend?: string
   facet?: IngestionActivityFacet
   observations?: IngestionActivityObservation[]
   table?: string
@@ -31,7 +33,7 @@ const formatRatio = (actual?: number, baseline?: number) => {
 }
 
 const observationStatus = (observation: IngestionActivityObservation) => {
-  if (observation.status === 'error') {
+  if (observation.status === 'error' || observation.volume_expectation_error) {
     return { color: theme.palette.error.main, label: 'ERROR' }
   }
   if (observation.passed === false) {
@@ -44,6 +46,7 @@ const observationStatus = (observation: IngestionActivityObservation) => {
 }
 
 const IngestionActivity: React.FC<IngestionActivityProps> = ({
+  backend,
   facet,
   observations: activityObservations,
   table,
@@ -52,6 +55,7 @@ const IngestionActivity: React.FC<IngestionActivityProps> = ({
   const observations = (activityObservations || facet?.observations || []).filter(
     (observation) =>
       (!table || observation.expectation?.table === table) &&
+      (!backend || getObservationBackend(observation) === backend) &&
       (!task || !observation.run_activity?.task_id || observation.run_activity.task_id === task)
   )
 
@@ -106,11 +110,23 @@ const IngestionActivity: React.FC<IngestionActivityProps> = ({
           {observations.map((observation, index) => {
             const status = observationStatus(observation)
             return (
-              <TableRow key={`${observation.expectation?.table || 'unknown'}-${index}`}>
+              <TableRow
+                key={`${getObservationBackend(observation)}-${
+                  observation.expectation?.table || 'unknown'
+                }-${index}`}
+              >
                 <TableCell align='left'>
                   <MqText font='mono'>{observation.expectation?.table || 'N/A'}</MqText>
+                  <MqText subdued small>
+                    {getObservationBackend(observation)}
+                  </MqText>
                   {observation.error && (
                     <MqText color={theme.palette.error.main}>{observation.error}</MqText>
+                  )}
+                  {observation.volume_expectation_error && (
+                    <MqText color={theme.palette.error.main}>
+                      {observation.volume_expectation_error}
+                    </MqText>
                   )}
                 </TableCell>
                 <TableCell align='left'>{formatDate(observation.expected_date)}</TableCell>

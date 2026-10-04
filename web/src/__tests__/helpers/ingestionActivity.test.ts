@@ -3,7 +3,10 @@
 
 import {
   ActivityJob,
+  getActivityRows,
   getAirflowServer,
+  getRowObservations,
+  getRunActivityCount,
   getVolumeHealth,
   mergeActivityJobs,
 } from '../../helpers/ingestionActivity'
@@ -118,6 +121,59 @@ describe('getVolumeHealth', () => {
 
     expect(health?.label).toBe('CRITICAL')
     expect(health?.baseline).toBe(0)
+  })
+})
+
+describe('backend-specific task outputs', () => {
+  const job = {
+    name: 'Example.ObserveIngestionActivity',
+    namespace: 'airflow-example',
+    runs: [
+      {
+        id: 'latest',
+        facets: {
+          chartmetric_ingestionActivity: {
+            observations: [
+              {
+                expectation: { backend: 'postgres', table: 'shared_table' },
+                run_activity: { ingested_count: 10, status: 'observing' },
+              },
+              {
+                expectation: { backend: 'clickhouse', table: 'shared_table' },
+                run_activity: { ingested_count: 20, status: 'observing' },
+              },
+            ],
+          },
+        },
+      } as Run,
+    ],
+  } as ActivityJob
+
+  it('creates separate rows for the same table on different backends', () => {
+    const rows = getActivityRows([job])
+
+    expect(rows).toHaveLength(2)
+    expect(rows.map((row) => row.backend).sort()).toEqual(['clickhouse', 'postgres'])
+  })
+
+  it('filters run counts by backend', () => {
+    const postgres = getRowObservations(
+      job.runs[0],
+      'shared_table',
+      'ObserveIngestionActivity',
+      job.name,
+      'postgres'
+    )
+    const clickhouse = getRowObservations(
+      job.runs[0],
+      'shared_table',
+      'ObserveIngestionActivity',
+      job.name,
+      'clickhouse'
+    )
+
+    expect(getRunActivityCount(postgres)).toBe(10)
+    expect(getRunActivityCount(clickhouse)).toBe(20)
   })
 })
 

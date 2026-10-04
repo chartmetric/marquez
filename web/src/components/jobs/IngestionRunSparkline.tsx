@@ -15,6 +15,7 @@ import MqText from '../core/text/MqText'
 import React from 'react'
 
 interface IngestionRunSparklineProps {
+  backend: string
   job: ActivityJob
   table: string
   task: string
@@ -22,11 +23,16 @@ interface IngestionRunSparklineProps {
 
 const SPARKLINE_RUNS = 10
 
-const IngestionRunSparkline: React.FC<IngestionRunSparklineProps> = ({ job, table, task }) => {
+const IngestionRunSparkline: React.FC<IngestionRunSparklineProps> = ({
+  backend,
+  job,
+  table,
+  task,
+}) => {
   const points = [...job.runs.slice(0, SPARKLINE_RUNS)]
     .reverse()
     .map((run) => ({
-      count: getRunActivityCount(getRowObservations(run, table, task, job.name)),
+      count: getRunActivityCount(getRowObservations(run, table, task, job.name, backend)),
       run,
     }))
     .filter((point): point is { count: number; run: Run } => point.count !== undefined)
