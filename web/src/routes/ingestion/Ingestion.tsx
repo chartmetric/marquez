@@ -370,6 +370,9 @@ const Ingestion: React.FC = () => {
               key={`${job.namespace}:${job.name}:${task}:${table}`}
               role='button'
               tabIndex={0}
+              aria-label={`${labels.dag}, ${task}, ${table}, ${job.namespace}, status ${
+                status.label
+              }, health ${health?.label || 'not available'}${health ? `, ${health.reason}` : ''}`}
               border={1}
               borderColor='divider'
               borderRadius={1}
@@ -413,13 +416,19 @@ const Ingestion: React.FC = () => {
                 <MqStatus color={status.color} label={status.label} />
                 {health ? (
                   <MQTooltip title={health.reason}>
-                    <Box tabIndex={0} justifySelf='center'>
+                    <Box justifySelf='center'>
                       <MqStatus color={HEALTH_DETAILS[health.label].color} label={health.label} />
                     </Box>
                   </MQTooltip>
                 ) : (
-                  <MQTooltip title='No volume health policy is available for the latest run.'>
-                    <Box tabIndex={0} justifySelf='center'>
+                  <MQTooltip
+                    title={
+                      status.label === 'ERROR'
+                        ? 'Volume metric collection failed for the latest run.'
+                        : 'No volume health policy is available for the latest run.'
+                    }
+                  >
+                    <Box justifySelf='center'>
                       <MqText subdued>N/A</MqText>
                     </Box>
                   </MQTooltip>

@@ -108,6 +108,17 @@ describe('getVolumeHealth', () => {
     expect(health?.baseline).toBe(100)
     expect(health?.sampleCount).toBe(10)
   })
+
+  it('marks sustained zero ingestion as critical', () => {
+    const health = getVolumeHealth(
+      makeJob(0, [0, 0, 0, 0, 0]),
+      'example',
+      'ObserveIngestionActivity'
+    )
+
+    expect(health?.label).toBe('CRITICAL')
+    expect(health?.baseline).toBe(0)
+  })
 })
 
 describe('Airflow server namespaces', () => {
@@ -128,5 +139,24 @@ describe('Airflow server namespaces', () => {
     expect(merged[0].namespace).toBe('airflow-data-script')
     expect(merged[0].runs).toHaveLength(2)
     expect(merged[0].run?.id).toBe('latest')
+  })
+
+  it('sorts runs with no started timestamp by creation time', () => {
+    const older = makeJob(10, [])
+    const newer = makeJob(20, [])
+    older.runs[0].startedAt = null as unknown as string
+    older.runs[0].createdAt = '2026-10-03T00:00:00Z'
+    newer.runs[0].startedAt = null as unknown as string
+    newer.runs[0].createdAt = '2026-10-04T00:00:00Z'
+
+    const merged = mergeActivityJobs(
+      [
+        { ...older, namespace: 'default' },
+        { ...newer, namespace: 'airflow-data-script' },
+      ],
+      100
+    )
+
+    expect(merged[0].runs[0].createdAt).toBe('2026-10-04T00:00:00Z')
   })
 })

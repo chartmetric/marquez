@@ -81,7 +81,9 @@ export const mergeActivityJobs = (jobs: ActivityJob[], runLimit: number): Activi
     const key = `${namespace}:${job.name}`
     const existing = mergedJobs.get(key)
     const runs = [...(existing?.runs || []), ...job.runs].sort((left, right) =>
-      right.startedAt.localeCompare(left.startedAt)
+      (right.startedAt || right.createdAt || '').localeCompare(
+        left.startedAt || left.createdAt || ''
+      )
     )
     mergedJobs.set(key, {
       name: job.name,
@@ -208,9 +210,12 @@ export const getVolumeHealth = (
   if (baseline === 0) {
     return {
       baseline,
-      label: 'LEARNING',
+      label: latest === 0 ? 'CRITICAL' : 'LEARNING',
       latest,
-      reason: 'The recent median is zero, so volume health cannot be evaluated.',
+      reason:
+        latest === 0
+          ? `No rows were ingested in the latest run or the recent ${history.length}-run median.`
+          : 'The recent median is zero, so volume health cannot be evaluated.',
       sampleCount: history.length,
     }
   }
