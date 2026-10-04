@@ -5,6 +5,8 @@ import {
   ActivityJob,
   getActivityRows,
   getActivityBackends,
+  getActivityError,
+  getActivityStatus,
   getAirflowServer,
   getRowObservations,
   getRunActivityCount,
@@ -201,6 +203,26 @@ describe('backend-specific task outputs', () => {
     )
 
     expect(resolveActivityBackend(backends)).toBe('postgres')
+  })
+
+  it('reports a volume policy error without merging backend metrics', () => {
+    const observation = {
+      expectation: { backend: 'clickhouse', table: 'shared_table' },
+      run_activity: {
+        ingested_count: 20,
+        status: 'observing',
+        volume_expectation_error: 'Duplicate clickhouse policy',
+      },
+    }
+
+    expect(getActivityStatus([observation])).toBe('ERROR')
+    expect(getActivityError([observation])).toBe('Duplicate clickhouse policy')
+  })
+
+  it('defaults a legacy observation backend to postgres', () => {
+    const rows = getActivityRows([makeJob(10, [])])
+
+    expect(rows[0].backend).toBe('postgres')
   })
 })
 

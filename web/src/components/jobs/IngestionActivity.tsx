@@ -33,7 +33,7 @@ const formatRatio = (actual?: number, baseline?: number) => {
 }
 
 const observationStatus = (observation: IngestionActivityObservation) => {
-  if (observation.status === 'error' || observation.volume_expectation_error) {
+  if (observation.status === 'error') {
     return { color: theme.palette.error.main, label: 'ERROR' }
   }
   if (observation.passed === false) {

@@ -168,7 +168,9 @@ const Ingestion: React.FC = () => {
     const requiresBackendSelection = Boolean(
       selectedTable && !resolvedBackend && availableBackends.length > 1
     )
-    const observations = selectedTable
+    const observations = requiresBackendSelection
+      ? []
+      : selectedTable
       ? getRowObservations(
           selectedJob.run,
           selectedTable,
@@ -178,9 +180,10 @@ const Ingestion: React.FC = () => {
         )
       : getIngestionFacet(selectedJob.run)?.observations || []
     const status = activityStatus(observations)
-    const health = selectedTable
-      ? getVolumeHealth(selectedJob, selectedTable, selectedTask, resolvedBackend)
-      : undefined
+    const health =
+      selectedTable && !requiresBackendSelection
+        ? getVolumeHealth(selectedJob, selectedTable, selectedTask, resolvedBackend)
+        : undefined
     const labels = getJobParts(selectedJob.name)
     const completenessByDay = new Map<string, IngestionActivityObservation>()
     selectedJob.runs.forEach((run) =>
@@ -227,7 +230,7 @@ const Ingestion: React.FC = () => {
                 </Box>
               </MQTooltip>
             )}
-            {health && (
+            {!requiresBackendSelection && health && (
               <MQTooltip title={health.reason}>
                 <Box>
                   <MqStatus color={HEALTH_DETAILS[health.label].color} label={health.label} />
@@ -236,6 +239,9 @@ const Ingestion: React.FC = () => {
             )}
           </Box>
         </Box>
+        {status.label === 'ERROR' && !requiresBackendSelection && (
+          <MqText color={theme.palette.error.main}>{status.description}</MqText>
+        )}
         {requiresBackendSelection && (
           <Box border={1} borderColor='warning.main' borderRadius={1} p={2} mb={2}>
             <MqText subheading>SELECT DATABASE BACKEND</MqText>
@@ -454,7 +460,9 @@ const Ingestion: React.FC = () => {
               tabIndex={0}
               aria-label={`${labels.dag}, ${task}, ${backend}, ${table}, ${job.namespace}, status ${
                 status.label
-              }, health ${health?.label || 'not available'}${health ? `, ${health.reason}` : ''}`}
+              }${status.label === 'ERROR' ? `, ${status.description}` : ''}, health ${
+                health?.label || 'not available'
+              }${health ? `, ${health.reason}` : ''}`}
               border={1}
               borderColor='divider'
               borderRadius={1}
