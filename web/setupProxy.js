@@ -36,6 +36,11 @@ router.get('/healthcheck', function (req, res) {
 
 app.use(router)
 
+// Let the client-side router handle direct navigation and browser refreshes.
+app.get('*', function (req, res) {
+  res.sendFile('index.html', { root: path })
+})
+
 app.listen(port, function() {
   console.log(`App listening on port ${port}!`)
 })
