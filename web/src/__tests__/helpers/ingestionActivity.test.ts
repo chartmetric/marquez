@@ -4,7 +4,7 @@
 import { ActivityJob, getVolumeHealth } from '../../helpers/ingestionActivity'
 import { Run } from '../../types/api'
 
-const makeRun = (count: number, mode?: 'stable' | 'variable', id = count.toString()) =>
+const makeRun = (count: number | undefined, mode?: 'stable' | 'variable', id = String(count)) =>
   ({
     id,
     facets: {
@@ -69,5 +69,38 @@ describe('getVolumeHealth', () => {
     }
 
     expect(getVolumeHealth(job, 'example', 'ObserveIngestionActivity')).toBeUndefined()
+  })
+
+  it('does not use an older run when the latest run has no metric', () => {
+    const job = {
+      ...makeJob(900, []),
+      runs: [makeRun(undefined, 'stable', 'latest'), makeRun(900, undefined, 'previous')],
+    }
+
+    expect(getVolumeHealth(job, 'example', 'ObserveIngestionActivity')).toBeUndefined()
+  })
+
+  it.each([
+    [800, 'NORMAL'],
+    [500, 'LOW'],
+  ])('uses an exclusive lower bound at the %s threshold', (latest, expected) => {
+    expect(
+      getVolumeHealth(
+        makeJob(latest, [1000, 1000, 1000, 1000, 1000]),
+        'example',
+        'ObserveIngestionActivity'
+      )?.label
+    ).toBe(expected)
+  })
+
+  it('uses at most ten historical runs', () => {
+    const health = getVolumeHealth(
+      makeJob(100, [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 10000]),
+      'example',
+      'ObserveIngestionActivity'
+    )
+
+    expect(health?.baseline).toBe(100)
+    expect(health?.sampleCount).toBe(10)
   })
 })

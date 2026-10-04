@@ -143,9 +143,7 @@ export const getActivityRows = (jobs: ActivityJob[]): ActivityRow[] =>
 const median = (values: number[]) => {
   const sorted = [...values].sort((left, right) => left - right)
   const midpoint = Math.floor(sorted.length / 2)
-  return sorted.length % 2
-    ? sorted[midpoint]
-    : (sorted[midpoint - 1] + sorted[midpoint]) / 2
+  return sorted.length % 2 ? sorted[midpoint] : (sorted[midpoint - 1] + sorted[midpoint]) / 2
 }
 
 export const getVolumeHealth = (
@@ -153,30 +151,27 @@ export const getVolumeHealth = (
   table: string,
   task: string
 ): VolumeHealth | undefined => {
-  const runMetrics = job.runs
-    .map((run) => {
-      const observations = getRowObservations(run, table, task, job.name)
-      return {
-        count: getRunActivityCount(observations),
-        policy: observations.find(
-          (observation) => observation.run_activity?.volume_expectation
-        )?.run_activity?.volume_expectation,
-      }
-    })
-    .filter((metric): metric is typeof metric & { count: number } => metric.count !== undefined)
-  const policy = runMetrics.find((metric) => metric.policy)?.policy
-  if (!policy?.mode || !runMetrics.length) return undefined
+  const latestObservations = getRowObservations(job.runs[0], table, task, job.name)
+  const latest = getRunActivityCount(latestObservations)
+  const policy = latestObservations.find(
+    (observation) => observation.run_activity?.volume_expectation
+  )?.run_activity?.volume_expectation
+  if (!policy?.mode || latest === undefined) return undefined
+
+  const history = job.runs
+    .slice(1)
+    .map((run) => getRunActivityCount(getRowObservations(run, table, task, job.name)))
+    .filter((count): count is number => count !== undefined)
+    .slice(0, 10)
   if (policy.mode === 'variable') {
     return {
       label: 'VARIABLE',
-      latest: runMetrics[0].count,
+      latest,
       reason: 'Run volume varies by design; no threshold is evaluated.',
-      sampleCount: Math.max(runMetrics.length - 1, 0),
+      sampleCount: history.length,
     }
   }
 
-  const latest = runMetrics[0].count
-  const history = runMetrics.slice(1, 11).map((metric) => metric.count)
   if (history.length < 5) {
     return {
       label: 'LEARNING',
@@ -199,13 +194,14 @@ export const getVolumeHealth = (
   const ratio = latest / baseline
   const warningRatio = policy.warning_ratio ?? 0.8
   const criticalRatio = policy.critical_ratio ?? 0.5
+  if (criticalRatio < 0 || warningRatio > 1 || criticalRatio >= warningRatio) return undefined
   const label = ratio < criticalRatio ? 'CRITICAL' : ratio < warningRatio ? 'LOW' : 'NORMAL'
   return {
     baseline,
     label,
     latest,
     ratio,
-    reason: `${Math.round(ratio * 100)}% of the recent ${history.length}-run median (${Math.round(
+    reason: `${(ratio * 100).toFixed(1)}% of the recent ${history.length}-run median (${Math.round(
       latest
     ).toLocaleString('en-US')} vs ${Math.round(baseline).toLocaleString('en-US')} rows).`,
     sampleCount: history.length,

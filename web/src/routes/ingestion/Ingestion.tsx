@@ -34,10 +34,10 @@ import { useSearchParams } from 'react-router-dom'
 import IngestionActivity from '../../components/jobs/IngestionActivity'
 import IngestionRunSparkline from '../../components/jobs/IngestionRunSparkline'
 import IngestionTrend from '../../components/jobs/IngestionTrend'
+import MQTooltip from '../../components/core/tooltip/MQTooltip'
 import MqEmpty from '../../components/core/empty/MqEmpty'
 import MqStatus from '../../components/core/status/MqStatus'
 import MqText from '../../components/core/text/MqText'
-import MQTooltip from '../../components/core/tooltip/MQTooltip'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 
 const REFRESH_INTERVAL_MS = 30000
@@ -57,10 +57,13 @@ const STATUS_DETAILS: Record<ActivityStatusLabel, { color: string; description: 
 }
 const STATUS_ORDER: ActivityStatusLabel[] = ['OBSERVING', 'SNAPSHOT', 'ERROR', 'NO DATA']
 const HEALTH_DETAILS: Record<VolumeHealthLabel, { color: string; description: string }> = {
-  NORMAL: { color: theme.palette.primary.main, description: 'Within the recent run baseline' },
+  NORMAL: { color: theme.palette.primary.main, description: 'At or above the warning threshold' },
   LOW: { color: theme.palette.warning.main, description: 'Below the warning threshold' },
   CRITICAL: { color: theme.palette.error.main, description: 'Below the critical threshold' },
-  LEARNING: { color: theme.palette.info.main, description: 'Collecting baseline history' },
+  LEARNING: {
+    color: theme.palette.info.main,
+    description: 'Baseline unavailable or still learning',
+  },
   VARIABLE: { color: theme.palette.secondary.main, description: 'Volume varies by design' },
 }
 const HEALTH_ORDER: VolumeHealthLabel[] = ['NORMAL', 'LOW', 'CRITICAL', 'LEARNING', 'VARIABLE']
@@ -111,10 +114,24 @@ const Ingestion: React.FC = () => {
   }, [loadActivity])
 
   const rows = useMemo<ActivityRow[]>(() => getActivityRows(jobs), [jobs])
-  const namespaces = useMemo(
-    () => [...new Set(jobs.map((job) => job.namespace))].sort(),
-    [jobs]
+  const evaluatedRows = useMemo(
+    () =>
+      rows.map((row) => {
+        const observations = getRowObservations(row.job.run, row.table, row.task, row.job.name)
+        return {
+          ...row,
+          activity: getObservedCount(observations),
+          health: getVolumeHealth(row.job, row.table, row.task),
+          status: activityStatus(observations),
+        }
+      }),
+    [rows]
   )
+  const namespaces = useMemo(() => [...new Set(jobs.map((job) => job.namespace))].sort(), [jobs])
+
+  useEffect(() => {
+    if (namespace && !namespaces.includes(namespace)) setNamespace('')
+  }, [namespace, namespaces])
 
   if (isLoading)
     return (
@@ -205,29 +222,21 @@ const Ingestion: React.FC = () => {
   }
 
   const normalizedQuery = query.trim().toLowerCase()
-  const filteredRows = rows.filter(({ job, table, task }) => {
+  const filteredRows = evaluatedRows.filter(({ job, table, task, status, health }) => {
     const labels = getJobParts(job.name)
-    const status = getActivityStatus(getRowObservations(job.run, table, task, job.name))
-    const health = getVolumeHealth(job, table, task)?.label
     return (
       (!namespace || job.namespace === namespace) &&
-      (!statusFilters.length || statusFilters.includes(status)) &&
-      (!healthFilters.length || (health !== undefined && healthFilters.includes(health))) &&
+      (!statusFilters.length || statusFilters.includes(status.label)) &&
+      (!healthFilters.length || (health !== undefined && healthFilters.includes(health.label))) &&
       [labels.dag, task, table, job.namespace].some((value) =>
         value.toLowerCase().includes(normalizedQuery)
       )
     )
   })
-  const reportingCount = rows.filter(
-    ({ job, table, task }) =>
-      getObservedCount(getRowObservations(job.run, table, task, job.name)) !== undefined
-  ).length
-  const attentionCount = rows.filter(
-    ({ job, table, task }) => {
-      const status = activityStatus(getRowObservations(job.run, table, task, job.name)).label
-      const health = getVolumeHealth(job, table, task)?.label
-      return status === 'ERROR' || health === 'LOW' || health === 'CRITICAL'
-    }
+  const reportingCount = evaluatedRows.filter(({ activity }) => activity !== undefined).length
+  const attentionCount = evaluatedRows.filter(
+    ({ status, health }) =>
+      status.label === 'ERROR' || health?.label === 'LOW' || health?.label === 'CRITICAL'
   ).length
 
   const toggleFilter = <T,>(value: T, values: T[], setValues: (values: T[]) => void) =>
@@ -267,6 +276,7 @@ const Ingestion: React.FC = () => {
         <TextField
           select
           size='small'
+          label='Airflow server'
           value={namespace}
           onChange={(event) => setNamespace(event.target.value)}
           sx={{ minWidth: 220 }}
@@ -286,12 +296,20 @@ const Ingestion: React.FC = () => {
           return (
             <Box
               key={label}
+              component='button'
+              type='button'
+              aria-pressed={statusFilters.includes(label)}
               display='flex'
               alignItems='center'
               gap={0.75}
               onClick={() => toggleFilter(label, statusFilters, setStatusFilters)}
               sx={{
+                background: 'none',
+                border: 0,
+                color: 'inherit',
                 cursor: 'pointer',
+                font: 'inherit',
+                padding: 0,
                 opacity: statusFilters.length && !statusFilters.includes(label) ? 0.45 : 1,
               }}
             >
@@ -310,12 +328,20 @@ const Ingestion: React.FC = () => {
           return (
             <Box
               key={label}
+              component='button'
+              type='button'
+              aria-pressed={healthFilters.includes(label)}
               display='flex'
               alignItems='center'
               gap={0.75}
               onClick={() => toggleFilter(label, healthFilters, setHealthFilters)}
               sx={{
+                background: 'none',
+                border: 0,
+                color: 'inherit',
                 cursor: 'pointer',
+                font: 'inherit',
+                padding: 0,
                 opacity: healthFilters.length && !healthFilters.includes(label) ? 0.45 : 1,
               }}
             >
@@ -327,30 +353,25 @@ const Ingestion: React.FC = () => {
           )
         })}
       </Box>
-      <Box
-        display='grid'
-        gridTemplateColumns='2fr 1.5fr 1.25fr 1fr 0.75fr 0.75fr'
-        px={2}
-        mb={1}
-      >
-        <MqText subdued>DAG / TASK</MqText>
+      <Box display='grid' gridTemplateColumns='2fr 1.5fr 1.25fr 1fr 0.75fr 0.75fr' px={2} mb={1}>
+        <MqText subdued>DAG / TASK / AIRFLOW SERVER</MqText>
         <MqText subdued>TARGET TABLE</MqText>
         <MqText subdued>RECENT 10 RUNS</MqText>
         <MqText subdued>LATEST</MqText>
         <MqText subdued>STATUS</MqText>
-        <MqText subdued>HEALTH</MqText>
+        <Box textAlign='center'>
+          <MqText subdued>HEALTH</MqText>
+        </Box>
       </Box>
       {error && <MqEmpty title='Ingestion activity unavailable' body={error} />}
       {!error &&
-        filteredRows.map(({ job, table, task }) => {
-          const observations = getRowObservations(job.run, table, task, job.name)
-          const status = activityStatus(observations)
-          const health = getVolumeHealth(job, table, task)
-          const activity = getObservedCount(observations)
+        filteredRows.map(({ job, table, task, status, health, activity }) => {
           const labels = getJobParts(job.name)
           return (
             <Box
               key={`${job.namespace}:${job.name}:${task}:${table}`}
+              role='button'
+              tabIndex={0}
               border={1}
               borderColor='divider'
               borderRadius={1}
@@ -359,6 +380,11 @@ const Ingestion: React.FC = () => {
               onClick={() =>
                 setSearchParams({ job: job.name, namespace: job.namespace, table, task })
               }
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                setSearchParams({ job: job.name, namespace: job.namespace, table, task })
+              }}
               sx={{ cursor: 'pointer', '&:hover': { backgroundColor: theme.palette.action.hover } }}
             >
               <Box
@@ -369,7 +395,7 @@ const Ingestion: React.FC = () => {
                 <Box>
                   <MqText font='mono'>{labels.dag}</MqText>
                   <MqText subdued>{task}</MqText>
-                  <MqText subdued>{job.namespace}</MqText>
+                  <MqText subdued>{`AIRFLOW SERVER · ${job.namespace}`}</MqText>
                   <MqText subdued>
                     {job.run
                       ? formatUpdatedAt(job.run.endedAt || job.run.startedAt)
@@ -389,12 +415,16 @@ const Ingestion: React.FC = () => {
                 <MqStatus color={status.color} label={status.label} />
                 {health ? (
                   <MQTooltip title={health.reason}>
-                    <Box>
+                    <Box tabIndex={0} justifySelf='center'>
                       <MqStatus color={HEALTH_DETAILS[health.label].color} label={health.label} />
                     </Box>
                   </MQTooltip>
                 ) : (
-                  <MqText subdued>—</MqText>
+                  <MQTooltip title='No volume health policy is available for the latest run.'>
+                    <Box tabIndex={0} justifySelf='center'>
+                      <MqText subdued>N/A</MqText>
+                    </Box>
+                  </MQTooltip>
                 )}
               </Box>
             </Box>
