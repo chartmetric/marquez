@@ -58,14 +58,11 @@ const STATUS_DETAILS: Record<ActivityStatusLabel, { color: string; description: 
 }
 const STATUS_ORDER: ActivityStatusLabel[] = ['OBSERVING', 'SNAPSHOT', 'ERROR', 'NO DATA']
 const HEALTH_DETAILS: Record<VolumeHealthLabel, { color: string; description: string }> = {
-  NORMAL: { color: theme.palette.primary.main, description: 'At or above the warning threshold' },
-  LOW: { color: theme.palette.warning.main, description: 'Below the warning threshold' },
-  CRITICAL: { color: theme.palette.error.main, description: 'Below the critical threshold' },
-  LEARNING: {
-    color: theme.palette.info.main,
-    description: 'Baseline unavailable or still learning',
-  },
-  VARIABLE: { color: theme.palette.secondary.main, description: 'Volume varies by design' },
+  NORMAL: { color: theme.palette.primary.main, description: 'At or above warning' },
+  LOW: { color: theme.palette.warning.main, description: 'Below warning' },
+  CRITICAL: { color: theme.palette.error.main, description: 'Below critical' },
+  LEARNING: { color: theme.palette.info.main, description: 'Building baseline' },
+  VARIABLE: { color: theme.palette.secondary.main, description: 'Expected to vary' },
 }
 const HEALTH_ORDER: VolumeHealthLabel[] = ['NORMAL', 'LOW', 'CRITICAL', 'LEARNING', 'VARIABLE']
 
