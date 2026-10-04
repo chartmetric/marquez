@@ -38,6 +38,7 @@ import marquez.common.models.NamespaceName;
 import marquez.common.models.TagName;
 import marquez.db.Columns;
 import marquez.service.models.Job;
+import marquez.service.models.Run;
 import org.jdbi.v3.core.mapper.RowMapper;
 import org.jdbi.v3.core.statement.StatementContext;
 import org.postgresql.util.PGobject;
@@ -51,6 +52,7 @@ public final class JobMapper implements RowMapper<Job> {
   public Job map(@NonNull ResultSet results, @NonNull StatementContext context)
       throws SQLException {
     ImmutableMap<String, Object> facetsOrNull = toFacetsOrNull(results, Columns.FACETS);
+    Run latestRun = latestRun(results, context);
     Job job =
         new Job(
             new JobId(
@@ -68,15 +70,22 @@ public final class JobMapper implements RowMapper<Job> {
             new HashSet<>(),
             urlOrNull(results, "current_location"),
             stringOrNull(results, Columns.DESCRIPTION),
-            // Latest Run is resolved in the JobDao. This can be brought in via a join and
-            //  and a jsonb but custom deserializers will need to be introduced
-            null,
+            latestRun,
             null,
             facetsOrNull,
             uuidOrNull(results, Columns.CURRENT_VERSION_UUID),
             getLabels(facetsOrNull),
             toTags(results, "tags"));
     return job;
+  }
+
+  private Run latestRun(@NonNull ResultSet results, @NonNull StatementContext context)
+      throws SQLException {
+    String runUuidColumn = "latest_run_" + Columns.ROW_UUID;
+    if (!Columns.exists(results, runUuidColumn) || uuidOrNull(results, runUuidColumn) == null) {
+      return null;
+    }
+    return new RunMapper("latest_run_").map(results, context);
   }
 
   Set<DatasetId> getDatasetFromJsonOrNull(@NonNull ResultSet results, String column)

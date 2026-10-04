@@ -74,7 +74,7 @@ const Jobs: React.FC<JobsProps> = ({
 
   React.useEffect(() => {
     if (selectedNamespace) {
-      fetchJobs(selectedNamespace, PAGE_SIZE, state.page * PAGE_SIZE)
+      fetchJobs(selectedNamespace, PAGE_SIZE, state.page * PAGE_SIZE, undefined, false)
     }
   }, [selectedNamespace, state.page])
 
@@ -88,7 +88,7 @@ const Jobs: React.FC<JobsProps> = ({
   const handleClickPage = (direction: 'prev' | 'next') => {
     const directionPage = direction === 'next' ? state.page + 1 : state.page - 1
 
-    fetchJobs(selectedNamespace || '', PAGE_SIZE, directionPage * PAGE_SIZE)
+    fetchJobs(selectedNamespace || '', PAGE_SIZE, directionPage * PAGE_SIZE, undefined, false)
     // reset page scroll
     window.scrollTo(0, 0)
     setState({ ...state, page: directionPage })
@@ -120,7 +120,13 @@ const Jobs: React.FC<JobsProps> = ({
               size={'small'}
               onClick={() => {
                 if (selectedNamespace) {
-                  fetchJobs(selectedNamespace, PAGE_SIZE, state.page * PAGE_SIZE)
+                  fetchJobs(
+                    selectedNamespace,
+                    PAGE_SIZE,
+                    state.page * PAGE_SIZE,
+                    undefined,
+                    false
+                  )
                 }
               }}
             >
@@ -144,7 +150,13 @@ const Jobs: React.FC<JobsProps> = ({
                     size={'small'}
                     onClick={() => {
                       if (selectedNamespace) {
-                        fetchJobs(selectedNamespace, PAGE_SIZE, state.page * PAGE_SIZE)
+                        fetchJobs(
+                          selectedNamespace,
+                          PAGE_SIZE,
+                          state.page * PAGE_SIZE,
+                          undefined,
+                          false
+                        )
                       }
                     }}
                   >

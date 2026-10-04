@@ -276,7 +276,8 @@ export const fetchJobs = (
   namespace: Nullable<string>,
   limit: number,
   offset: number,
-  lastRunStates?: RunState
+  lastRunStates?: RunState,
+  includeRunHistory = true
 ) => ({
   type: actionTypes.FETCH_JOBS,
   payload: {
@@ -284,6 +285,7 @@ export const fetchJobs = (
     limit,
     offset,
     lastRunStates,
+    includeRunHistory,
   },
 })
 

@@ -230,7 +230,19 @@ public interface JobDao extends BaseDao {
         SELECT
           j.*,
           f.facets,
-          COALESCE(jt.tags, ARRAY[]::VARCHAR[]) AS tags
+          COALESCE(jt.tags, ARRAY[]::VARCHAR[]) AS tags,
+          r.uuid AS latest_run_uuid,
+          r.created_at AS latest_run_created_at,
+          r.updated_at AS latest_run_updated_at,
+          r.nominal_start_time AS latest_run_nominal_start_time,
+          r.nominal_end_time AS latest_run_nominal_end_time,
+          r.current_run_state AS latest_run_current_run_state,
+          r.started_at AS latest_run_started_at,
+          r.ended_at AS latest_run_ended_at,
+          r.namespace_name AS latest_run_namespace_name,
+          r.job_name AS latest_run_job_name,
+          r.job_version_uuid AS latest_run_job_version,
+          r.location AS latest_run_location
         FROM
           jobs_view_page AS j
         LEFT OUTER JOIN job_versions_temp AS jv

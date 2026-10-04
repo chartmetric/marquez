@@ -225,7 +225,8 @@ export function* fetchJobsSaga() {
         payload.namespace,
         payload.limit,
         payload.offset,
-        payload.lastRunStates
+        payload.lastRunStates,
+        payload.includeRunHistory
       )
       yield put(fetchJobsSuccess(response.jobs, response.totalCount))
     } catch (e) {
