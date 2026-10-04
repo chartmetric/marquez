@@ -195,8 +195,8 @@ public class JobResource extends BaseResource {
       Collections.addAll(lastRunStates, RunState.values());
     }
 
-    // Summary mode retains latest-run state and timing, but omits recent run history and
-    // run-derived dataset enrichment used by the dashboard and job detail views.
+    // Summary mode retains state and timing from the job's current run. Recent run history and
+    // run-derived args, facets, and dataset versions are returned as empty values.
     final List<Job> jobs =
         includeRunDetails
             ? jobService.findAllWithRun(namespace, lastRunStates, limit, offset)

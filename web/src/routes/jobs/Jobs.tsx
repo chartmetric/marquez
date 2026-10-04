@@ -73,16 +73,21 @@ const Jobs: React.FC<JobsProps> = ({
   }
   const [state, setState] = React.useState<JobsState>(defaultState)
 
-  React.useEffect(() => {
-    if (selectedNamespace) {
-      fetchJobs(
-        selectedNamespace,
-        PAGE_SIZE,
-        state.page * PAGE_SIZE,
-        undefined,
-        INCLUDE_RUN_DETAILS
-      )
+  const fetchJobsPage = (page: number) => {
+    if (!selectedNamespace) {
+      return
     }
+    fetchJobs(
+      selectedNamespace,
+      PAGE_SIZE,
+      page * PAGE_SIZE,
+      undefined,
+      INCLUDE_RUN_DETAILS
+    )
+  }
+
+  React.useEffect(() => {
+    fetchJobsPage(state.page)
   }, [selectedNamespace, state.page])
 
   React.useEffect(() => {
@@ -95,13 +100,7 @@ const Jobs: React.FC<JobsProps> = ({
   const handleClickPage = (direction: 'prev' | 'next') => {
     const directionPage = direction === 'next' ? state.page + 1 : state.page - 1
 
-    fetchJobs(
-      selectedNamespace || '',
-      PAGE_SIZE,
-      directionPage * PAGE_SIZE,
-      undefined,
-      INCLUDE_RUN_DETAILS
-    )
+    fetchJobsPage(directionPage)
     // reset page scroll
     window.scrollTo(0, 0)
     setState({ ...state, page: directionPage })
@@ -132,15 +131,7 @@ const Jobs: React.FC<JobsProps> = ({
               color={'primary'}
               size={'small'}
               onClick={() => {
-                if (selectedNamespace) {
-                  fetchJobs(
-                    selectedNamespace,
-                    PAGE_SIZE,
-                    state.page * PAGE_SIZE,
-                    undefined,
-                    INCLUDE_RUN_DETAILS
-                  )
-                }
+                fetchJobsPage(state.page)
               }}
             >
               <Refresh fontSize={'small'} />
@@ -162,15 +153,7 @@ const Jobs: React.FC<JobsProps> = ({
                     color={'primary'}
                     size={'small'}
                     onClick={() => {
-                      if (selectedNamespace) {
-                        fetchJobs(
-                          selectedNamespace,
-                          PAGE_SIZE,
-                          state.page * PAGE_SIZE,
-                          undefined,
-                          INCLUDE_RUN_DETAILS
-                        )
-                      }
+                      fetchJobsPage(state.page)
                     }}
                   >
                     Refresh

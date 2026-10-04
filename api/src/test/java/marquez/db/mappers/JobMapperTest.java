@@ -172,4 +172,17 @@ class JobMapperTest {
     assertThat(actual.getLatestRun().orElseThrow().getState()).isEqualTo(RunState.COMPLETED);
     assertThat(actual.getLatestRun().orElseThrow().getDurationMs()).contains(60_000L);
   }
+
+  @Test
+  void shouldMapMissingLatestRunSummary() throws SQLException {
+    ResultSetMetaData metadata = mock(ResultSetMetaData.class);
+    when(metadata.getColumnCount()).thenReturn(1);
+    when(metadata.getColumnName(1)).thenReturn("latest_run_uuid");
+    when(resultSet.getMetaData()).thenReturn(metadata);
+    when(resultSet.getObject("latest_run_uuid")).thenReturn(null);
+
+    Job actual = new JobMapper().map(resultSet, mock(StatementContext.class));
+
+    assertThat(actual.getLatestRun()).isEmpty();
+  }
 }
