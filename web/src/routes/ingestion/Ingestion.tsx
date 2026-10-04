@@ -54,7 +54,7 @@ const STATUS_DETAILS: Record<ActivityStatusLabel, { color: string; description: 
     description: 'Run-level ingestion is reporting',
   },
   SNAPSHOT: { color: theme.palette.info.main, description: 'Daily snapshot only' },
-  ERROR: { color: theme.palette.error.main, description: 'Metric collection failed' },
+  ERROR: { color: theme.palette.error.main, description: 'Metric collection or policy error' },
   'NO DATA': {
     color: theme.palette.secondary.main,
     description: 'No ingestion metric available',
@@ -166,7 +166,7 @@ const Ingestion: React.FC = () => {
     const availableBackends = getActivityBackends(rows, selectedJob, selectedTable, selectedTask)
     const resolvedBackend = resolveActivityBackend(availableBackends, selectedBackend)
     const requiresBackendSelection = Boolean(
-      selectedTable && !resolvedBackend && availableBackends.length > 1
+      selectedTable && !resolvedBackend && availableBackends.length > 0
     )
     const observations = requiresBackendSelection
       ? []
@@ -205,7 +205,12 @@ const Ingestion: React.FC = () => {
       <Container maxWidth='lg'>
         <Box pt={2} mb={3} display='flex' alignItems='center' justifyContent='space-between'>
           <Box display='flex' alignItems='center'>
-            <IconButton onClick={() => setSearchParams({})} size='small' sx={{ mr: 1 }}>
+            <IconButton
+              aria-label='Back to ingestion activity'
+              onClick={() => setSearchParams({})}
+              size='small'
+              sx={{ mr: 1 }}
+            >
               <ArrowBackIosRounded fontSize='small' />
             </IconButton>
             <Box>

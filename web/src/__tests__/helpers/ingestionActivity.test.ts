@@ -205,6 +205,10 @@ describe('backend-specific task outputs', () => {
     expect(resolveActivityBackend(backends)).toBe('postgres')
   })
 
+  it('does not substitute a different backend for an invalid URL value', () => {
+    expect(resolveActivityBackend(['postgres'], 'clickhouse')).toBeUndefined()
+  })
+
   it('reports a volume policy error without merging backend metrics', () => {
     const observation = {
       expectation: { backend: 'clickhouse', table: 'shared_table' },
@@ -219,10 +223,30 @@ describe('backend-specific task outputs', () => {
     expect(getActivityError([observation])).toBe('Duplicate clickhouse policy')
   })
 
+  it('reports a daily metric collection error', () => {
+    expect(getActivityStatus([{ status: 'error', error: 'daily query failed' }])).toBe('ERROR')
+    expect(getActivityError([{ status: 'error', error: 'daily query failed' }])).toBe(
+      'daily query failed'
+    )
+  })
+
   it('defaults a legacy observation backend to postgres', () => {
     const rows = getActivityRows([makeJob(10, [])])
 
     expect(rows[0].backend).toBe('postgres')
+  })
+
+  it('uses only metrics from the latest ten execution windows', () => {
+    const runs = [
+      makeRun(100, 'stable', 'latest'),
+      makeRun(undefined, undefined, 'missing'),
+      ...Array.from({ length: 9 }, (_, index) => makeRun(100, undefined, `recent-${index}`)),
+      makeRun(10000, undefined, 'older'),
+    ]
+    const health = getVolumeHealth({ ...makeJob(100, []), runs }, 'example', 'ObserveIngestionActivity')
+
+    expect(health?.baseline).toBe(100)
+    expect(health?.sampleCount).toBe(9)
   })
 })
 

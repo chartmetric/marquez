@@ -173,6 +173,7 @@ export const getActivityStatus = (
   if (
     observations.some(
       (observation) =>
+        observation.status === 'error' ||
         observation.run_activity?.status === 'error' ||
         observation.volume_expectation_error ||
         observation.run_activity?.volume_expectation_error
@@ -220,7 +221,7 @@ export const getActivityBackends = (
   ].sort()
 
 export const resolveActivityBackend = (backends: string[], requested?: string) => {
-  if (requested && backends.includes(requested)) return requested
+  if (requested) return backends.includes(requested) ? requested : undefined
   return backends.length === 1 ? backends[0] : undefined
 }
 
