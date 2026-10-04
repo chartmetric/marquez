@@ -172,8 +172,8 @@ export interface Job {
   namespace: string
   location: string
   description: string
-  latestRun: Run
-  latestRuns: Run[]
+  latestRun: Nullable<Run>
+  latestRuns: Nullable<Run[]>
   tags: string[]
   parentJobName: Nullable<string>
   parentJobUuid: Nullable<string>

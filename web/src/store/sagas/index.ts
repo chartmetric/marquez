@@ -49,7 +49,7 @@ import {
   Runs,
   Tags,
 } from '../../types/api'
-import { all, put, take } from 'redux-saga/effects'
+import { all, put, take, takeLatest } from 'redux-saga/effects'
 
 const call: any = Effects.call
 
@@ -102,6 +102,7 @@ import {
   fetchInitialDatasetVersionsSuccess,
   fetchJobMetricsSuccess,
   fetchJobSuccess,
+  fetchJobs as fetchJobsAction,
   fetchJobsSuccess,
   fetchLatestRunsSuccess,
   fetchLineageMetricsSuccess,
@@ -216,23 +217,24 @@ export function* fetchLatestRunsSaga() {
   }
 }
 
-export function* fetchJobsSaga() {
-  while (true) {
-    try {
-      const { payload } = yield take(FETCH_JOBS)
-      const response: Jobs = yield call(
-        getJobs,
-        payload.namespace,
-        payload.limit,
-        payload.offset,
-        payload.lastRunStates,
-        payload.includeRunDetails
-      )
-      yield put(fetchJobsSuccess(response.jobs, response.totalCount))
-    } catch (e) {
-      yield put(applicationError('Something went wrong while fetching job runs'))
-    }
+export function* fetchJobsRequest({ payload }: ReturnType<typeof fetchJobsAction>) {
+  try {
+    const response: Jobs = yield call(
+      getJobs,
+      payload.namespace,
+      payload.limit,
+      payload.offset,
+      payload.lastRunStates,
+      payload.includeRunDetails
+    )
+    yield put(fetchJobsSuccess(response.jobs, response.totalCount))
+  } catch (e) {
+    yield put(applicationError('Something went wrong while fetching job runs'))
   }
+}
+
+export function* fetchJobsSaga() {
+  yield takeLatest(FETCH_JOBS, fetchJobsRequest)
 }
 
 export function* fetchJobSaga() {

@@ -6,7 +6,7 @@ import * as actions from '../../store/actionCreators'
 import * as api from '../../store/requests'
 import * as matchers from 'redux-saga-test-plan/matchers'
 import { expectSaga, testSaga } from 'redux-saga-test-plan'
-import { fetchNamespaces } from '../../store/sagas/'
+import { fetchJobsRequest, fetchJobsSaga, fetchNamespaces } from '../../store/sagas/'
 
 describe('Main (That\'s so Fetch) Saga', () => {
   const mockNamespaces = [
@@ -51,5 +51,29 @@ describe('Main (That\'s so Fetch) Saga', () => {
           })
       )
     })
+  })
+})
+
+describe('fetchJobsSaga', () => {
+  const action = actions.fetchJobs('test-namespace', 20, 40, undefined, false)
+
+  it('keeps only the latest jobs request', () => {
+    testSaga(fetchJobsSaga)
+      .next()
+      .takeLatest(actionTypes.FETCH_JOBS, fetchJobsRequest)
+      .next()
+      .isDone()
+  })
+
+  it('forwards the summary mode flag to the jobs request', () => {
+    const response = { jobs: [], totalCount: 0 }
+
+    testSaga(fetchJobsRequest, action)
+      .next()
+      .call(api.getJobs, 'test-namespace', 20, 40, undefined, false)
+      .next(response)
+      .put(actions.fetchJobsSuccess(response.jobs, response.totalCount))
+      .next()
+      .isDone()
   })
 })

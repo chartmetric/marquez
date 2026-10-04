@@ -77,13 +77,7 @@ const Jobs: React.FC<JobsProps> = ({
     if (!selectedNamespace) {
       return
     }
-    fetchJobs(
-      selectedNamespace,
-      PAGE_SIZE,
-      page * PAGE_SIZE,
-      undefined,
-      INCLUDE_RUN_DETAILS
-    )
+    fetchJobs(selectedNamespace, PAGE_SIZE, page * PAGE_SIZE, undefined, INCLUDE_RUN_DETAILS)
   }
 
   React.useEffect(() => {
@@ -100,7 +94,6 @@ const Jobs: React.FC<JobsProps> = ({
   const handleClickPage = (direction: 'prev' | 'next') => {
     const directionPage = direction === 'next' ? state.page + 1 : state.page - 1
 
-    fetchJobsPage(directionPage)
     // reset page scroll
     window.scrollTo(0, 0)
     setState({ ...state, page: directionPage })
