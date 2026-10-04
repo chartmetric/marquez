@@ -3,13 +3,18 @@
 
 import { BarChart } from '@mui/x-charts'
 import { Box } from '@mui/material'
-import { IngestionActivityObservation, getIngestionFacet } from '../../helpers/ingestionActivity'
+import {
+  IngestionActivityObservation,
+  getIngestionFacet,
+  getObservationBackend,
+} from '../../helpers/ingestionActivity'
 import { Run } from '../../types/api'
 import MqText from '../core/text/MqText'
 import ParentSize from '@visx/responsive/lib/components/ParentSize'
 import React from 'react'
 
 interface IngestionTrendProps {
+  backend?: string
   runs: Run[]
   table?: string
   task?: string
@@ -35,6 +40,7 @@ const formatTimestamp = (timestamp?: string) =>
     : 'Unknown'
 
 const IngestionTrend: React.FC<IngestionTrendProps> = ({
+  backend: selectedBackend,
   runs,
   table: selectedTable,
   task: selectedTask,
@@ -45,6 +51,7 @@ const IngestionTrend: React.FC<IngestionTrendProps> = ({
     getIngestionFacet(run)?.observations?.forEach((observation) => {
       const table = observation.expectation?.table || 'unknown'
       if (selectedTable && table !== selectedTable) return
+      if (selectedBackend && getObservationBackend(observation) !== selectedBackend) return
       if (
         selectedTask &&
         observation.run_activity?.task_id &&
@@ -52,8 +59,10 @@ const IngestionTrend: React.FC<IngestionTrendProps> = ({
       )
         return
       if (typeof observation.run_activity?.ingested_count !== 'number') return
-      series.set(table, [
-        ...(series.get(table) || []),
+      const backend = getObservationBackend(observation)
+      const seriesKey = `${backend}:${table}`
+      series.set(seriesKey, [
+        ...(series.get(seriesKey) || []),
         { ...observation, runId: run.id, timestamp: run.endedAt || run.startedAt },
       ])
     })
@@ -74,13 +83,15 @@ const IngestionTrend: React.FC<IngestionTrendProps> = ({
     <Box mt={2} border={1} borderColor='divider' borderRadius={1} p={2}>
       <MqText subheading>RECENT RUN ACTIVITY</MqText>
       <MqText subdued>Rows ingested during each of the latest 20 task execution windows.</MqText>
-      {[...series.entries()].map(([table, points]) => {
+      {[...series.entries()].map(([seriesKey, points]) => {
+        const backend = getObservationBackend(points[0])
+        const table = points[0].expectation?.table || 'unknown'
         const slots: Array<TrendPoint | undefined> = [
           ...points,
           ...Array<undefined>(DETAIL_RUNS - points.length).fill(undefined),
         ]
         return (
-          <Box key={table} mt={1}>
+          <Box key={seriesKey} mt={1}>
             <MqText subdued small>{`${points.length} OF ${DETAIL_RUNS} RUNS REPORTING`}</MqText>
             <Box height={300}>
               <ParentSize>
@@ -91,7 +102,7 @@ const IngestionTrend: React.FC<IngestionTrendProps> = ({
                     series={[
                       {
                         data: slots.map((point) => (point ? pointCount(point) : null)),
-                        label: table,
+                        label: `${backend} · ${table}`,
                         valueFormatter: (value) =>
                           value === null ? '' : `${value.toLocaleString('en-US')} rows`,
                       },

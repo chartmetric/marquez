@@ -7,14 +7,18 @@ import {
   ActivityStatusLabel,
   IngestionActivityObservation,
   VolumeHealthLabel,
+  getActivityBackends,
+  getActivityError,
   getActivityRows,
   getActivityStatus,
   getIngestionFacet,
   getJobParts,
+  getObservationBackend,
   getObservedCount,
   getRowObservations,
   getVolumeHealth,
   mergeActivityJobs,
+  resolveActivityBackend,
 } from '../../helpers/ingestionActivity'
 import { ArrowBackIosRounded } from '@mui/icons-material'
 import {
@@ -50,7 +54,7 @@ const STATUS_DETAILS: Record<ActivityStatusLabel, { color: string; description: 
     description: 'Run-level ingestion is reporting',
   },
   SNAPSHOT: { color: theme.palette.info.main, description: 'Daily snapshot only' },
-  ERROR: { color: theme.palette.error.main, description: 'Metric collection failed' },
+  ERROR: { color: theme.palette.error.main, description: 'Metric collection or policy error' },
   'NO DATA': {
     color: theme.palette.secondary.main,
     description: 'No ingestion metric available',
@@ -68,7 +72,15 @@ const HEALTH_ORDER: VolumeHealthLabel[] = ['NORMAL', 'LOW', 'CRITICAL', 'LEARNIN
 
 const activityStatus = (observations: IngestionActivityObservation[]) => {
   const label = getActivityStatus(observations)
-  return { label, ...STATUS_DETAILS[label] }
+  const details = STATUS_DETAILS[label]
+  return {
+    label,
+    ...details,
+    description:
+      label === 'ERROR'
+        ? getActivityError(observations) || details.description
+        : details.description,
+  }
 }
 
 const Ingestion: React.FC = () => {
@@ -115,11 +127,17 @@ const Ingestion: React.FC = () => {
   const evaluatedRows = useMemo(
     () =>
       rows.map((row) => {
-        const observations = getRowObservations(row.job.run, row.table, row.task, row.job.name)
+        const observations = getRowObservations(
+          row.job.run,
+          row.table,
+          row.task,
+          row.job.name,
+          row.backend
+        )
         return {
           ...row,
           activity: getObservedCount(observations),
-          health: getVolumeHealth(row.job, row.table, row.task),
+          health: getVolumeHealth(row.job, row.table, row.task, row.backend),
           status: activityStatus(observations),
         }
       }),
@@ -142,31 +160,57 @@ const Ingestion: React.FC = () => {
     (job) => job.name === searchParams.get('job') && job.namespace === searchParams.get('namespace')
   )
   const selectedTable = searchParams.get('table') || undefined
+  const selectedBackend = searchParams.get('backend') || undefined
   const selectedTask = searchParams.get('task') || getJobParts(selectedJob?.name || '').task
   if (selectedJob) {
-    const observations = selectedTable
-      ? getRowObservations(selectedJob.run, selectedTable, selectedTask, selectedJob.name)
+    const availableBackends = getActivityBackends(rows, selectedJob, selectedTable, selectedTask)
+    const resolvedBackend = resolveActivityBackend(availableBackends, selectedBackend)
+    const requiresBackendSelection = Boolean(
+      selectedTable && !resolvedBackend && availableBackends.length > 0
+    )
+    const observations = requiresBackendSelection
+      ? []
+      : selectedTable
+      ? getRowObservations(
+          selectedJob.run,
+          selectedTable,
+          selectedTask,
+          selectedJob.name,
+          resolvedBackend
+        )
       : getIngestionFacet(selectedJob.run)?.observations || []
     const status = activityStatus(observations)
-    const health = selectedTable
-      ? getVolumeHealth(selectedJob, selectedTable, selectedTask)
-      : undefined
+    const health =
+      selectedTable && !requiresBackendSelection
+        ? getVolumeHealth(selectedJob, selectedTable, selectedTask, resolvedBackend)
+        : undefined
     const labels = getJobParts(selectedJob.name)
     const completenessByDay = new Map<string, IngestionActivityObservation>()
     selectedJob.runs.forEach((run) =>
-      getRowObservations(run, selectedTable || 'unknown', selectedTask, selectedJob.name).forEach(
-        (observation) => {
-          if (!observation.expected_date) return
-          const key = `${observation.expectation?.table || 'unknown'}:${observation.expected_date}`
-          if (!completenessByDay.has(key)) completenessByDay.set(key, observation)
-        }
-      )
+      getRowObservations(
+        run,
+        selectedTable || 'unknown',
+        selectedTask,
+        selectedJob.name,
+        resolvedBackend
+      ).forEach((observation) => {
+        if (!observation.expected_date) return
+        const key = `${getObservationBackend(observation)}:${
+          observation.expectation?.table || 'unknown'
+        }:${observation.expected_date}`
+        if (!completenessByDay.has(key)) completenessByDay.set(key, observation)
+      })
     )
     return (
       <Container maxWidth='lg'>
         <Box pt={2} mb={3} display='flex' alignItems='center' justifyContent='space-between'>
           <Box display='flex' alignItems='center'>
-            <IconButton onClick={() => setSearchParams({})} size='small' sx={{ mr: 1 }}>
+            <IconButton
+              aria-label='Back to ingestion activity'
+              onClick={() => setSearchParams({})}
+              size='small'
+              sx={{ mr: 1 }}
+            >
               <ArrowBackIosRounded fontSize='small' />
             </IconButton>
             <Box>
@@ -175,6 +219,7 @@ const Ingestion: React.FC = () => {
               </MqText>
               <MqText subdued>{labels.dag}</MqText>
               {selectedTable && <MqText font='mono'>{selectedTable}</MqText>}
+              {resolvedBackend && <MqText subdued>{resolvedBackend}</MqText>}
               <MqText subdued>
                 {selectedJob.run
                   ? formatUpdatedAt(selectedJob.run.endedAt || selectedJob.run.startedAt)
@@ -183,8 +228,14 @@ const Ingestion: React.FC = () => {
             </Box>
           </Box>
           <Box display='flex' gap={1}>
-            <MqStatus color={status.color} label={status.label} />
-            {health && (
+            {!requiresBackendSelection && (
+              <MQTooltip title={status.description}>
+                <Box>
+                  <MqStatus color={status.color} label={status.label} />
+                </Box>
+              </MQTooltip>
+            )}
+            {!requiresBackendSelection && health && (
               <MQTooltip title={health.reason}>
                 <Box>
                   <MqStatus color={HEALTH_DETAILS[health.label].color} label={health.label} />
@@ -193,7 +244,39 @@ const Ingestion: React.FC = () => {
             )}
           </Box>
         </Box>
-        {health && (
+        {status.label === 'ERROR' && !requiresBackendSelection && (
+          <MqText color={theme.palette.error.main}>{status.description}</MqText>
+        )}
+        {requiresBackendSelection && (
+          <Box border={1} borderColor='warning.main' borderRadius={1} p={2} mb={2}>
+            <MqText subheading>SELECT DATABASE BACKEND</MqText>
+            <MqText subdued>
+              This task and table report activity from multiple database backends. Select one to
+              view unambiguous metrics.
+            </MqText>
+            <Box display='flex' gap={1} mt={1}>
+              {availableBackends.map((backend) => (
+                <Button
+                  key={backend}
+                  size='small'
+                  variant='outlined'
+                  onClick={() =>
+                    setSearchParams({
+                      job: selectedJob.name,
+                      namespace: selectedJob.namespace,
+                      backend,
+                      table: selectedTable || '',
+                      task: selectedTask,
+                    })
+                  }
+                >
+                  {backend}
+                </Button>
+              ))}
+            </Box>
+          </Box>
+        )}
+        {!requiresBackendSelection && health && (
           <Box border={1} borderColor='divider' borderRadius={1} p={2} mb={2}>
             <Box display='flex' justifyContent='space-between' alignItems='center' mb={1}>
               <MqText subheading>VOLUME HEALTH</MqText>
@@ -209,24 +292,34 @@ const Ingestion: React.FC = () => {
             )}
           </Box>
         )}
-        <IngestionTrend runs={selectedJob.runs} table={selectedTable} task={selectedTask} />
-        <IngestionActivity
-          observations={[...completenessByDay.values()]}
-          table={selectedTable}
-          task={selectedTask}
-        />
+        {!requiresBackendSelection && (
+          <>
+            <IngestionTrend
+              backend={resolvedBackend}
+              runs={selectedJob.runs}
+              table={selectedTable}
+              task={selectedTask}
+            />
+            <IngestionActivity
+              backend={resolvedBackend}
+              observations={[...completenessByDay.values()]}
+              table={selectedTable}
+              task={selectedTask}
+            />
+          </>
+        )}
       </Container>
     )
   }
 
   const normalizedQuery = query.trim().toLowerCase()
-  const filteredRows = evaluatedRows.filter(({ job, table, task, status, health }) => {
+  const filteredRows = evaluatedRows.filter(({ backend, job, table, task, status, health }) => {
     const labels = getJobParts(job.name)
     return (
       (!namespace || job.namespace === namespace) &&
       (!statusFilters.length || statusFilters.includes(status.label)) &&
       (!healthFilters.length || (health !== undefined && healthFilters.includes(health.label))) &&
-      [labels.dag, task, table, job.namespace].some((value) =>
+      [labels.dag, task, table, backend, job.namespace].some((value) =>
         value.toLowerCase().includes(normalizedQuery)
       )
     )
@@ -269,7 +362,7 @@ const Ingestion: React.FC = () => {
           size='small'
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder='Search DAG, task, target table, or Airflow server'
+          placeholder='Search DAG, task, target table, backend, or Airflow server'
         />
         <TextField
           select
@@ -353,7 +446,7 @@ const Ingestion: React.FC = () => {
       </Box>
       <Box display='grid' gridTemplateColumns='2fr 1.5fr 1.25fr 1fr 0.75fr 0.75fr' px={2} mb={1}>
         <MqText subdued>DAG / TASK / AIRFLOW SERVER</MqText>
-        <MqText subdued>TARGET TABLE</MqText>
+        <MqText subdued>TARGET TABLE / BACKEND</MqText>
         <MqText subdued>RECENT 10 RUNS</MqText>
         <MqText subdued>LATEST</MqText>
         <MqText subdued>STATUS</MqText>
@@ -363,28 +456,30 @@ const Ingestion: React.FC = () => {
       </Box>
       {error && <MqEmpty title='Ingestion activity unavailable' body={error} />}
       {!error &&
-        filteredRows.map(({ job, table, task, status, health, activity }) => {
+        filteredRows.map(({ backend, job, table, task, status, health, activity }) => {
           const labels = getJobParts(job.name)
           return (
             <Box
-              key={`${job.namespace}:${job.name}:${task}:${table}`}
+              key={`${job.namespace}:${job.name}:${backend}:${task}:${table}`}
               role='button'
               tabIndex={0}
-              aria-label={`${labels.dag}, ${task}, ${table}, ${job.namespace}, status ${
+              aria-label={`${labels.dag}, ${task}, ${backend}, ${table}, ${job.namespace}, status ${
                 status.label
-              }, health ${health?.label || 'not available'}${health ? `, ${health.reason}` : ''}`}
+              }${status.label === 'ERROR' ? `, ${status.description}` : ''}, health ${
+                health?.label || 'not available'
+              }${health ? `, ${health.reason}` : ''}`}
               border={1}
               borderColor='divider'
               borderRadius={1}
               p={2}
               mb={1}
               onClick={() =>
-                setSearchParams({ job: job.name, namespace: job.namespace, table, task })
+                setSearchParams({ job: job.name, namespace: job.namespace, backend, table, task })
               }
               onKeyDown={(event) => {
                 if (event.key !== 'Enter' && event.key !== ' ') return
                 event.preventDefault()
-                setSearchParams({ job: job.name, namespace: job.namespace, table, task })
+                setSearchParams({ job: job.name, namespace: job.namespace, backend, table, task })
               }}
               sx={{ cursor: 'pointer', '&:hover': { backgroundColor: theme.palette.action.hover } }}
             >
@@ -403,8 +498,13 @@ const Ingestion: React.FC = () => {
                       : 'No completed run'}
                   </MqText>
                 </Box>
-                <MqText font='mono'>{table}</MqText>
-                <IngestionRunSparkline job={job} table={table} task={task} />
+                <Box>
+                  <MqText font='mono'>{table}</MqText>
+                  <MqText subdued small>
+                    {backend}
+                  </MqText>
+                </Box>
+                <IngestionRunSparkline backend={backend} job={job} table={table} task={task} />
                 <Box>
                   <MqText subdued>
                     {activity?.runActivity ? 'RUN INGESTED' : 'DAILY SNAPSHOT'}
@@ -413,7 +513,11 @@ const Ingestion: React.FC = () => {
                     {activity === undefined ? 'N/A' : activity.count.toLocaleString('en-US')}
                   </MqText>
                 </Box>
-                <MqStatus color={status.color} label={status.label} />
+                <MQTooltip title={status.description}>
+                  <Box>
+                    <MqStatus color={status.color} label={status.label} />
+                  </Box>
+                </MQTooltip>
                 {health ? (
                   <MQTooltip title={health.reason}>
                     <Box justifySelf='center'>
@@ -424,7 +528,7 @@ const Ingestion: React.FC = () => {
                   <MQTooltip
                     title={
                       status.label === 'ERROR'
-                        ? 'Volume metric collection failed for the latest run.'
+                        ? status.description
                         : 'No volume health policy is available for the latest run.'
                     }
                   >
