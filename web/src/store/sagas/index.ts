@@ -92,6 +92,7 @@ import {
   deleteDatasetTagSuccess,
   deleteJobSuccess,
   deleteJobTagSuccess,
+  fetchColumnLineage as fetchColumnLineageAction,
   fetchColumnLineageSuccess,
   fetchDatasetMetricsSuccess,
   fetchDatasetSuccess,
@@ -105,6 +106,7 @@ import {
   fetchJobs as fetchJobsAction,
   fetchJobsSuccess,
   fetchLatestRunsSuccess,
+  fetchLineage as fetchLineageAction,
   fetchLineageMetricsSuccess,
   fetchLineageSuccess,
   fetchNamespacesSuccess,
@@ -139,40 +141,44 @@ export function* fetchNamespaces() {
   }
 }
 
-export function* fetchLineage() {
-  while (true) {
-    try {
-      const { payload } = yield take(FETCH_LINEAGE)
-      const result: LineageGraph = yield call(
-        getLineage,
-        payload.nodeType,
-        payload.namespace,
-        payload.name,
-        payload.depth
-      )
-      yield put(fetchLineageSuccess(result))
-    } catch (e) {
-      yield put(applicationError('Something went wrong while fetching lineage'))
-    }
+export function* fetchLineageRequest({ payload }: ReturnType<typeof fetchLineageAction>) {
+  try {
+    const result: LineageGraph = yield call(
+      getLineage,
+      payload.nodeType,
+      payload.namespace,
+      payload.name,
+      payload.depth
+    )
+    yield put(fetchLineageSuccess(result))
+  } catch (e) {
+    yield put(applicationError('Something went wrong while fetching lineage'))
   }
 }
 
-export function* fetchColumnLineage() {
-  while (true) {
-    try {
-      const { payload } = yield take(FETCH_COLUMN_LINEAGE)
-      const result: ColumnLineageGraph = yield call(
-        getColumnLineage,
-        payload.nodeType,
-        payload.namespace,
-        payload.name,
-        payload.depth
-      )
-      yield put(fetchColumnLineageSuccess(result))
-    } catch (e) {
-      yield put(applicationError('Something went wrong while fetching lineage'))
-    }
+export function* fetchLineageSaga() {
+  yield takeLatest(FETCH_LINEAGE, fetchLineageRequest)
+}
+
+export function* fetchColumnLineageRequest({
+  payload,
+}: ReturnType<typeof fetchColumnLineageAction>) {
+  try {
+    const result: ColumnLineageGraph = yield call(
+      getColumnLineage,
+      payload.nodeType,
+      payload.namespace,
+      payload.name,
+      payload.depth
+    )
+    yield put(fetchColumnLineageSuccess(result))
+  } catch (e) {
+    yield put(applicationError('Something went wrong while fetching lineage'))
   }
+}
+
+export function* fetchColumnLineageSaga() {
+  yield takeLatest(FETCH_COLUMN_LINEAGE, fetchColumnLineageRequest)
 }
 
 export function* fetchSearch() {
@@ -605,8 +611,8 @@ export default function* rootSaga(): Generator {
     fetchEventsSaga(),
     fetchJobFacetsSaga(),
     fetchRunFacetsSaga(),
-    fetchLineage(),
-    fetchColumnLineage(),
+    fetchLineageSaga(),
+    fetchColumnLineageSaga(),
     fetchSearch(),
     deleteJobSaga(),
     fetchOpenSearchJobsSaga(),
