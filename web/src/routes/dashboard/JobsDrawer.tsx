@@ -13,6 +13,8 @@ import MqText from '../../components/core/text/MqText'
 import React, { useEffect } from 'react'
 const WIDTH = 800
 const PAGE_SIZE = 10
+// Keep pagination on the summary query; full run history belongs on the job detail page.
+const INCLUDE_RUN_DETAILS = false
 
 interface StateProps {
   jobs: Job[]
@@ -30,12 +32,11 @@ const JobsDrawer = ({ jobs, isJobsLoading, jobCount, fetchJobs }: JobsDrawerProp
   const [page, setPage] = React.useState<number>(0)
 
   useEffect(() => {
-    fetchJobs(null, PAGE_SIZE, page * PAGE_SIZE)
+    fetchJobs(null, PAGE_SIZE, page * PAGE_SIZE, undefined, INCLUDE_RUN_DETAILS)
   }, [page])
 
   const handleClickPage = (direction: 'prev' | 'next') => {
     const directionPage = direction === 'next' ? page + 1 : page - 1
-    fetchJobs(null, PAGE_SIZE, directionPage * PAGE_SIZE)
     setPage(directionPage)
   }
 
