@@ -6,7 +6,15 @@ import * as actions from '../../store/actionCreators'
 import * as api from '../../store/requests'
 import * as matchers from 'redux-saga-test-plan/matchers'
 import { expectSaga, testSaga } from 'redux-saga-test-plan'
-import { fetchJobsRequest, fetchJobsSaga, fetchNamespaces } from '../../store/sagas/'
+import {
+  fetchColumnLineageRequest,
+  fetchColumnLineageSaga,
+  fetchJobsRequest,
+  fetchJobsSaga,
+  fetchLineageRequest,
+  fetchLineageSaga,
+  fetchNamespaces,
+} from '../../store/sagas/'
 
 describe('Main (That\'s so Fetch) Saga', () => {
   const mockNamespaces = [
@@ -73,6 +81,24 @@ describe('fetchJobsSaga', () => {
       .call(api.getJobs, 'test-namespace', 20, 40, undefined, false)
       .next(response)
       .put(actions.fetchJobsSuccess(response.jobs, response.totalCount))
+      .next()
+      .isDone()
+  })
+})
+
+describe('lineage request sagas', () => {
+  it('keeps only the latest table-lineage request', () => {
+    testSaga(fetchLineageSaga)
+      .next()
+      .takeLatest(actionTypes.FETCH_LINEAGE, fetchLineageRequest)
+      .next()
+      .isDone()
+  })
+
+  it('keeps only the latest column-lineage request', () => {
+    testSaga(fetchColumnLineageSaga)
+      .next()
+      .takeLatest(actionTypes.FETCH_COLUMN_LINEAGE, fetchColumnLineageRequest)
       .next()
       .isDone()
   })
