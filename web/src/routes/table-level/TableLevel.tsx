@@ -13,6 +13,7 @@ import { bindActionCreators } from 'redux'
 import { connect } from 'react-redux'
 import { createElkNodes } from './layout'
 import { fetchLineage } from '../../store/actionCreators'
+import { parseLineageDepth } from '../../helpers/lineage'
 import { useCallbackRef } from '../../helpers/hooks'
 import { useParams, useSearchParams } from 'react-router-dom'
 import ParentSize from '@visx/responsive/lib/components/ParentSize'
@@ -39,7 +40,7 @@ const ColumnLevel: React.FC<ColumnLevelProps> = ({
   const { nodeType, namespace, name } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
 
-  const [depth, setDepth] = useState(Number(searchParams.get('depth')) || 2)
+  const [depth, setDepth] = useState(parseLineageDepth(searchParams.get('depth'), 0))
 
   const [isCompact, setIsCompact] = useState(searchParams.get('isCompact') === 'true')
   const [isFull, setIsFull] = useState(searchParams.get('isFull') === 'true')
