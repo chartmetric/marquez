@@ -55,6 +55,9 @@ type RefreshInterval = '30s' | '5m' | '10m' | 'Never'
 const REFRESH_INTERVALS: RefreshInterval[] = ['30s', '5m', '10m', 'Never']
 
 const JOB_RUN_LIMIT = 10
+// Detailed mode lists jobs, then loads recent runs and dataset versions for every job.
+// The dashboard only needs the latest-run summary already returned by the single-query path.
+const INCLUDE_RUN_DETAILS = false
 
 const INTERVAL_TO_MS_MAP: Record<RefreshInterval, number> = {
   '30s': 30000,
@@ -120,7 +123,13 @@ const Dashboard: React.FC = ({
   }, [timeframe])
 
   useEffect(() => {
-    fetchJobs(null, JOB_RUN_LIMIT, 0, selectedState ? selectedState : undefined)
+    fetchJobs(
+      null,
+      JOB_RUN_LIMIT,
+      0,
+      selectedState ? selectedState : undefined,
+      INCLUDE_RUN_DETAILS
+    )
   }, [selectedState])
 
   useEffect(() => {
@@ -152,7 +161,7 @@ const Dashboard: React.FC = ({
 
   const refresh = () => {
     const currentSearchParams = searchParams.get('timeframe')
-    fetchJobs(null, JOB_RUN_LIMIT, 0)
+    fetchJobs(null, JOB_RUN_LIMIT, 0, undefined, INCLUDE_RUN_DETAILS)
     fetchLineageMetrics(currentSearchParams === 'week' ? 'week' : 'day')
     fetchJobMetrics(currentSearchParams === 'week' ? 'week' : 'day')
     fetchDatasetMetrics(currentSearchParams === 'week' ? 'week' : 'day')
@@ -168,7 +177,7 @@ const Dashboard: React.FC = ({
         open={jobsDrawerOpen}
         onClose={() => {
           setJobsDrawerOpen(false)
-          fetchJobs(null, JOB_RUN_LIMIT, 0)
+          fetchJobs(null, JOB_RUN_LIMIT, 0, undefined, INCLUDE_RUN_DETAILS)
         }}
         PaperProps={{
           sx: {

@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router-dom'
 import MQTooltip from '../../components/core/tooltip/MQTooltip'
 import MqStatus from '../../components/core/status/MqStatus'
 import MqText from '../../components/core/text/MqText'
-import React, { useMemo } from 'react'
+import React from 'react'
 
 interface Props {
   job: Job
@@ -20,14 +20,12 @@ interface Props {
 
 const JobRunItem: React.FC<Props> = ({ job }) => {
   const navigate = useNavigate()
-  const reversedRuns = [...(job.latestRuns || [])].reverse()
-  const longestRunDuration = useMemo(
-    () =>
-      (job.latestRuns || []).reduce(
-        (longestDuration, run) => Math.max(longestDuration, run.durationMs),
-        1
-      ),
-    [job.latestRuns]
+  const hasRunHistory = Boolean(job.latestRuns?.length)
+  const displayedRuns = hasRunHistory ? job.latestRuns || [] : job.latestRun ? [job.latestRun] : []
+  const reversedRuns = [...displayedRuns].reverse()
+  const longestRunDuration = displayedRuns.reduce(
+    (longestDuration, run) => Math.max(longestDuration, run.durationMs),
+    1
   )
   return (
     <Box
@@ -66,10 +64,10 @@ const JobRunItem: React.FC<Props> = ({ job }) => {
       </Box>
       <Box display={'flex'}>
         <Box>
-          <MqText subdued>LAST 10 RUNS</MqText>
+          <MqText subdued>{hasRunHistory ? 'LAST 10 RUNS' : 'LATEST RUN'}</MqText>
           <Box display={'flex'} height={40} alignItems={'flex-end'}>
             {/*pad 10 - latestRuns length with a small grey bar*/}
-            {Array.from({ length: 10 - (job.latestRuns?.length || 0) }, (_, i) => (
+            {Array.from({ length: hasRunHistory ? 10 - displayedRuns.length : 0 }, (_, i) => (
               <Box
                 key={i}
                 bgcolor={'divider'}
