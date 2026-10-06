@@ -11,6 +11,7 @@ import { bindActionCreators } from 'redux'
 import { connect } from 'react-redux'
 import { createElkNodes } from './layout'
 import { fetchColumnLineage } from '../../store/actionCreators'
+import { parseLineageDepth } from '../../helpers/lineage'
 import { useCallbackRef } from '../../helpers/hooks'
 import { useParams, useSearchParams } from 'react-router-dom'
 import Box from '@mui/material/Box'
@@ -38,7 +39,7 @@ const ColumnLevel: React.FC<ColumnLevelProps> = ({
   const { namespace, name } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
 
-  const [depth, setDepth] = useState(Number(searchParams.get('depth')) || 2)
+  const [depth, setDepth] = useState(parseLineageDepth(searchParams.get('depth'), 2))
 
   const graphControls = useRef<ZoomPanControls>()
 
