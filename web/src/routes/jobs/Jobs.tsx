@@ -3,6 +3,9 @@
 
 import * as Redux from 'redux'
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Button,
   Chip,
   Container,
@@ -12,9 +15,11 @@ import {
   TableHead,
   TableRow,
 } from '@mui/material'
+import { ExpandMore } from '@mui/icons-material'
 import { HEADER_HEIGHT } from '../../helpers/theme'
 import { IState } from '../../store/reducers'
 import { Job } from '../../types/api'
+import { JobsListRole, getJobsListRole } from '../../helpers/lineage'
 import { MqScreenLoad } from '../../components/core/screen-load/MqScreenLoad'
 import { Nullable } from '../../types/util/Nullable'
 import { Refresh } from '@mui/icons-material'
@@ -25,6 +30,7 @@ import { fetchJobs, resetJobs } from '../../store/actionCreators'
 import { formatUpdatedAt } from '../../helpers'
 import { stopWatchDuration } from '../../helpers/time'
 import { truncateText } from '../../helpers/text'
+import { useSearchParams } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress/CircularProgress'
 import IconButton from '@mui/material/IconButton'
@@ -46,6 +52,7 @@ interface StateProps {
 
 interface JobsState {
   page: number
+  roleFilters: JobsListRole[]
 }
 
 interface DispatchProps {
@@ -56,8 +63,18 @@ interface DispatchProps {
 type JobsProps = StateProps & DispatchProps
 
 const PAGE_SIZE = 20
+const INITIAL_FETCH_LIMIT = 500
 const JOB_HEADER_HEIGHT = 64
 const INCLUDE_RUN_DETAILS = false
+
+const jobRoleColor: Record<JobsListRole, 'primary' | 'secondary' | 'info' | 'warning' | 'default'> =
+  {
+    TASK: 'primary',
+    VALIDATION: 'info',
+    OBSERVER: 'warning',
+    DAG: 'secondary',
+    JOB: 'default',
+  }
 
 const Jobs: React.FC<JobsProps> = ({
   jobs,
@@ -68,21 +85,49 @@ const Jobs: React.FC<JobsProps> = ({
   fetchJobs,
   resetJobs,
 }) => {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const validRoles = Object.keys(jobRoleColor) as JobsListRole[]
+  const queryRoles = (searchParams.get('types') || '')
+    .split(',')
+    .filter((role): role is JobsListRole => validRoles.includes(role as JobsListRole))
+  const queryPage = Number(searchParams.get('page'))
   const defaultState = {
-    page: 0,
+    page: Number.isInteger(queryPage) && queryPage >= 0 ? queryPage : 0,
+    roleFilters: queryRoles,
   }
   const [state, setState] = React.useState<JobsState>(defaultState)
+  const previousNamespace = React.useRef(selectedNamespace)
 
-  const fetchJobsPage = (page: number) => {
+  const updateViewState = (nextState: JobsState) => {
+    const nextParams = new URLSearchParams(searchParams)
+    if (nextState.roleFilters.length) nextParams.set('types', nextState.roleFilters.join(','))
+    else nextParams.delete('types')
+    if (nextState.page > 0) nextParams.set('page', String(nextState.page))
+    else nextParams.delete('page')
+    setSearchParams(nextParams, { replace: true })
+    setState(nextState)
+  }
+
+  const fetchJobsList = (limit = INITIAL_FETCH_LIMIT) => {
     if (!selectedNamespace) {
       return
     }
-    fetchJobs(selectedNamespace, PAGE_SIZE, page * PAGE_SIZE, undefined, INCLUDE_RUN_DETAILS)
+    fetchJobs(selectedNamespace, limit, 0, undefined, INCLUDE_RUN_DETAILS)
   }
 
   React.useEffect(() => {
-    fetchJobsPage(state.page)
-  }, [selectedNamespace, state.page])
+    if (previousNamespace.current !== selectedNamespace) {
+      previousNamespace.current = selectedNamespace
+      updateViewState({ page: 0, roleFilters: state.roleFilters })
+    }
+    fetchJobsList()
+  }, [selectedNamespace])
+
+  React.useEffect(() => {
+    if (!isJobsLoading && totalCount > jobs.length && totalCount > INITIAL_FETCH_LIMIT) {
+      fetchJobsList(totalCount)
+    }
+  }, [isJobsLoading, jobs.length, totalCount])
 
   React.useEffect(() => {
     return () => {
@@ -96,7 +141,19 @@ const Jobs: React.FC<JobsProps> = ({
 
     // reset page scroll
     window.scrollTo(0, 0)
-    setState({ ...state, page: directionPage })
+    updateViewState({ ...state, page: directionPage })
+  }
+
+  const filteredJobs = jobs.filter(
+    (job) => !state.roleFilters.length || state.roleFilters.includes(getJobsListRole(job))
+  )
+  const visibleJobs = filteredJobs.slice(state.page * PAGE_SIZE, (state.page + 1) * PAGE_SIZE)
+
+  const toggleRoleFilter = (role: JobsListRole) => {
+    const roleFilters = state.roleFilters.includes(role)
+      ? state.roleFilters.filter((item) => item !== role)
+      : [...state.roleFilters, role]
+    updateViewState({ page: 0, roleFilters })
   }
 
   const i18next = require('i18next')
@@ -111,20 +168,24 @@ const Jobs: React.FC<JobsProps> = ({
               variant={'outlined'}
               color={'primary'}
               sx={{ marginLeft: 1 }}
-              label={totalCount + ' total'}
+              label={
+                state.roleFilters.length
+                  ? `${filteredJobs.length} of ${totalCount}`
+                  : `${totalCount} total`
+              }
             ></Chip>
           )}
         </Box>
         <Box display={'flex'} alignItems={'center'}>
           {isJobsLoading && <CircularProgress size={16} />}
-          <NamespaceSelect />
+          <NamespaceSelect kind='jobs' />
           <MQTooltip title={'Refresh'}>
             <IconButton
               sx={{ ml: 2 }}
               color={'primary'}
               size={'small'}
               onClick={() => {
-                fetchJobsPage(state.page)
+                fetchJobsList(totalCount > INITIAL_FETCH_LIMIT ? totalCount : INITIAL_FETCH_LIMIT)
               }}
             >
               <Refresh fontSize={'small'} />
@@ -132,12 +193,64 @@ const Jobs: React.FC<JobsProps> = ({
           </MQTooltip>
         </Box>
       </Box>
+      <Accordion disableGutters elevation={0} sx={{ border: 1, borderColor: 'divider', mb: 1 }}>
+        <AccordionSummary expandIcon={<ExpandMore />}>
+          <MqText subheading>WHICH JOB SHOULD I OPEN?</MqText>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Box display='grid' gridTemplateColumns='auto minmax(0, 1fr)' gap={1.25}>
+            {[
+              ['TASK', 'Open for dataset lineage and the latest processing result.'],
+              ['DAG', 'Parent container only; open one of its TASK rows instead.'],
+              [
+                'OBSERVER',
+                'Publishes Ingestion Activity metrics; use the activity page for results.',
+              ],
+              ['VALIDATION', 'Checks freshness or health and usually has read-only lineage.'],
+              ['JOB', 'Generic job; inspect its graph to determine whether lineage is available.'],
+            ].map(([role, description]) => (
+              <React.Fragment key={role}>
+                <Chip
+                  label={role}
+                  color={jobRoleColor[role as JobsListRole]}
+                  size='small'
+                  variant='outlined'
+                />
+                <MqText subdued>{description}</MqText>
+              </React.Fragment>
+            ))}
+          </Box>
+        </AccordionDetails>
+      </Accordion>
+      <Box display='flex' alignItems='center' gap={1} px={1} py={1.5} flexWrap='wrap'>
+        <MqText subdued>FILTER BY TYPE</MqText>
+        <Chip
+          label='ALL'
+          size='small'
+          color={state.roleFilters.length ? 'default' : 'primary'}
+          variant={state.roleFilters.length ? 'outlined' : 'filled'}
+          onClick={() => updateViewState({ page: 0, roleFilters: [] })}
+        />
+        {(Object.keys(jobRoleColor) as JobsListRole[]).map((role) => {
+          const selected = state.roleFilters.includes(role)
+          return (
+            <Chip
+              key={role}
+              label={role}
+              size='small'
+              color={jobRoleColor[role]}
+              variant={selected ? 'filled' : 'outlined'}
+              onClick={() => toggleRoleFilter(role)}
+            />
+          )
+        })}
+      </Box>
       <MqScreenLoad
         loading={isJobsLoading && !isJobsInit}
         customHeight={`calc(100vh - ${HEADER_HEIGHT}px - ${JOB_HEADER_HEIGHT}px)`}
       >
         <>
-          {jobs.length === 0 ? (
+          {filteredJobs.length === 0 ? (
             <Box p={2}>
               <MqEmpty title={i18next.t('jobs_route.empty_title')}>
                 <>
@@ -146,7 +259,9 @@ const Jobs: React.FC<JobsProps> = ({
                     color={'primary'}
                     size={'small'}
                     onClick={() => {
-                      fetchJobsPage(state.page)
+                      fetchJobsList(
+                        totalCount > INITIAL_FETCH_LIMIT ? totalCount : INITIAL_FETCH_LIMIT
+                      )
                     }}
                   >
                     Refresh
@@ -159,6 +274,9 @@ const Jobs: React.FC<JobsProps> = ({
               <Table size='small'>
                 <TableHead>
                   <TableRow>
+                    <TableCell align='left'>
+                      <MqText subheading>TYPE</MqText>
+                    </TableCell>
                     <TableCell key={i18next.t('jobs_route.name_col')} align='left'>
                       <MqText subheading>{i18next.t('datasets_route.name_col')}</MqText>
                     </TableCell>
@@ -177,16 +295,29 @@ const Jobs: React.FC<JobsProps> = ({
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {jobs.map((job) => {
+                  {visibleJobs.map((job) => {
+                    const role = getJobsListRole(job)
                     return (
                       <TableRow key={job.name}>
                         <TableCell align='left'>
-                          <MqText
-                            link
-                            linkTo={`/lineage/${encodeNode('JOB', job.namespace, job.name)}`}
-                          >
-                            {truncateText(job.name, 40)}
-                          </MqText>
+                          <Chip
+                            label={role}
+                            color={jobRoleColor[role]}
+                            size='small'
+                            variant='outlined'
+                          />
+                        </TableCell>
+                        <TableCell align='left'>
+                          <MQTooltip title={job.name}>
+                            <Box component='span'>
+                              <MqText
+                                link
+                                linkTo={`/lineage/${encodeNode('JOB', job.namespace, job.name)}`}
+                              >
+                                {truncateText(job.name, 40)}
+                              </MqText>
+                            </Box>
+                          </MQTooltip>
                         </TableCell>
                         <TableCell align='left'>
                           <MqText>{truncateText(job.namespace, 40)}</MqText>
@@ -217,7 +348,7 @@ const Jobs: React.FC<JobsProps> = ({
               <MqPaging
                 pageSize={PAGE_SIZE}
                 currentPage={state.page}
-                totalCount={totalCount}
+                totalCount={filteredJobs.length}
                 incrementPage={() => handleClickPage('next')}
                 decrementPage={() => handleClickPage('prev')}
               />

@@ -3,6 +3,7 @@
 import { Box } from '@mui/system'
 import { Chip, Divider } from '@mui/material'
 import { Job } from '../../types/api'
+import { JobsListRole, getJobsListRole } from '../../helpers/lineage'
 import { encodeNode, runStateColor } from '../../helpers/nodes'
 import { formatUpdatedAt } from '../../helpers'
 import { stopWatchDuration } from '../../helpers/time'
@@ -18,8 +19,18 @@ interface Props {
   job: Job
 }
 
+const jobRoleColor: Record<JobsListRole, 'primary' | 'secondary' | 'info' | 'warning' | 'default'> =
+  {
+    TASK: 'primary',
+    VALIDATION: 'info',
+    OBSERVER: 'warning',
+    DAG: 'secondary',
+    JOB: 'default',
+  }
+
 const JobRunItem: React.FC<Props> = ({ job }) => {
   const navigate = useNavigate()
+  const role = getJobsListRole(job)
   const hasRunHistory = Boolean(job.latestRuns?.length)
   const displayedRuns = hasRunHistory ? job.latestRuns || [] : job.latestRun ? [job.latestRun] : []
   const reversedRuns = [...displayedRuns].reverse()
@@ -47,6 +58,13 @@ const JobRunItem: React.FC<Props> = ({ job }) => {
     >
       <Box display={'flex'} alignItems={'center'} justifyContent={'space-between'} mb={1}>
         <Box display={'flex'} alignItems={'center'}>
+          <Chip
+            label={role}
+            color={jobRoleColor[role]}
+            size='small'
+            variant='outlined'
+            sx={{ mr: 1 }}
+          />
           <MQTooltip title={job.name} placement={'top'}>
             <Box>
               <MqText bold font='mono' sx={{ mr: 2 }}>

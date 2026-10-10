@@ -2,6 +2,7 @@ import { ArrowBackIosRounded, Refresh } from '@mui/icons-material'
 import { Divider, FormControlLabel, Switch, TextField } from '@mui/material'
 import { HEADER_HEIGHT, theme } from '../../helpers/theme'
 import { fetchLineage } from '../../store/actionCreators'
+import { getDatasetDisplayName, getNamespaceDisplayName } from '../../helpers/lineage'
 import { truncateText } from '../../helpers/text'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Box from '@mui/material/Box'
@@ -34,6 +35,17 @@ export const ActionBar = ({
   const { namespace, name } = useParams()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigateBack = () => {
+    // React Router stores the current browser-history position in `idx`. Preserve the
+    // exact list filters and page when lineage was opened from inside the application.
+    if ((window.history.state?.idx ?? 0) > 0) {
+      navigate(-1)
+      return
+    }
+
+    // A directly opened/bookmarked lineage URL has no in-app history to return to.
+    navigate(nodeType === 'JOB' ? '/jobs' : '/datasets', { replace: true })
+  }
   return (
     <Box
       sx={{
@@ -51,12 +63,8 @@ export const ActionBar = ({
       borderColor={theme.palette.secondary.main}
     >
       <Box display={'flex'} alignItems={'center'}>
-        <MQTooltip title={`Back to ${nodeType === 'JOB' ? 'jobs' : 'datasets'}`}>
-          <IconButton
-            size={'small'}
-            sx={{ mr: 2 }}
-            onClick={() => navigate(nodeType === 'JOB' ? '/' : '/datasets')}
-          >
+        <MQTooltip title={'Back to previous page'}>
+          <IconButton size={'small'} sx={{ mr: 2 }} onClick={navigateBack}>
             <ArrowBackIosRounded fontSize={'small'} />
           </IconButton>
         </MQTooltip>
@@ -70,13 +78,19 @@ export const ActionBar = ({
         <Box>
           <MqText subdued>Namespace</MqText>
           <MqText font={'mono'}>
-            {namespace ? truncateText(namespace, 40) : 'Unknown namespace name'}
+            {namespace
+              ? truncateText(getNamespaceDisplayName(namespace), 40)
+              : 'Unknown namespace name'}
           </MqText>
         </Box>
         <Divider orientation='vertical' flexItem sx={{ mx: 2 }} />
         <Box>
           <MqText subdued>Name</MqText>
-          <MqText font={'mono'}>{name ? truncateText(name, 40) : 'Unknown dataset name'}</MqText>
+          <MqText font={'mono'}>
+            {name
+              ? truncateText(nodeType === 'DATASET' ? getDatasetDisplayName(name) : name, 40)
+              : 'Unknown dataset name'}
+          </MqText>
         </Box>
       </Box>
       <Box display={'flex'} alignItems={'center'}>

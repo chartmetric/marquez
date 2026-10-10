@@ -13,6 +13,7 @@ export interface IngestionActivityObservation {
   }
   expected_date?: string
   passed?: boolean
+  reason?: string
   volume_expectation_error?: string
   run_activity?: {
     backend?: string
@@ -57,6 +58,12 @@ export interface ActivityRow {
 export interface ObservedCount {
   count: number
   runActivity: boolean
+}
+
+export interface EvaluatedActivityRow extends ActivityRow {
+  activity?: ObservedCount
+  health?: VolumeHealth
+  status: { color: string; description: string; label: ActivityStatusLabel }
 }
 
 export type ActivityStatusLabel = 'ERROR' | 'OBSERVING' | 'SNAPSHOT' | 'NO DATA'
@@ -153,6 +160,11 @@ export const getActivityError = (observations: IngestionActivityObservation[]) =
         observation.error
     )
     .find((error): error is string => Boolean(error))
+
+export const getActivityUnavailableReason = (observations: IngestionActivityObservation[]) =>
+  observations
+    .map((observation) => observation.reason)
+    .find((reason): reason is string => Boolean(reason))
 
 export const getObservedCount = (
   observations: IngestionActivityObservation[]
@@ -296,4 +308,46 @@ export const getVolumeHealth = (
     ).toLocaleString('en-US')} vs ${Math.round(baseline).toLocaleString('en-US')} rows).`,
     sampleCount: history.length,
   }
+}
+
+const ATTENTION_RANK: Record<ActivityStatusLabel | VolumeHealthLabel, number> = {
+  ERROR: 0,
+  CRITICAL: 1,
+  LOW: 2,
+  'NO DATA': 3,
+  LEARNING: 4,
+  SNAPSHOT: 5,
+  OBSERVING: 6,
+  NORMAL: 6,
+  VARIABLE: 6,
+}
+
+/** Keep the operations view deterministic: actionable rows first, then newest activity. */
+export const compareActivityRows = (left: EvaluatedActivityRow, right: EvaluatedActivityRow) => {
+  const leftRank = Math.min(
+    ATTENTION_RANK[left.status.label],
+    left.health ? ATTENTION_RANK[left.health.label] : Number.POSITIVE_INFINITY
+  )
+  const rightRank = Math.min(
+    ATTENTION_RANK[right.status.label],
+    right.health ? ATTENTION_RANK[right.health.label] : Number.POSITIVE_INFINITY
+  )
+  if (leftRank !== rightRank) return leftRank - rightRank
+
+  const leftUpdated = left.job.run?.endedAt || left.job.run?.startedAt || ''
+  const rightUpdated = right.job.run?.endedAt || right.job.run?.startedAt || ''
+  const updatedOrder = rightUpdated.localeCompare(leftUpdated)
+  if (updatedOrder) return updatedOrder
+
+  return [left.job.name, left.task, left.backend, left.table]
+    .join(':')
+    .localeCompare([right.job.name, right.task, right.backend, right.table].join(':'))
+}
+
+/** Split a qualified warehouse name without allowing it to resize the grid. */
+export const splitQualifiedTableName = (name: string) => {
+  const separator = name.lastIndexOf('.')
+  return separator < 0
+    ? { qualifier: undefined, table: name }
+    : { qualifier: name.slice(0, separator), table: name.slice(separator + 1) }
 }

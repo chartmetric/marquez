@@ -1,11 +1,21 @@
 import * as Redux from 'redux'
 import { Box, Stack } from '@mui/system'
-import { Button, ButtonGroup, Container, Divider, Drawer, Grid, Skeleton } from '@mui/material'
+import {
+  Button,
+  ButtonGroup,
+  Chip,
+  Container,
+  Divider,
+  Drawer,
+  Grid,
+  Skeleton,
+} from '@mui/material'
 import { ChevronRight } from '@mui/icons-material'
 import { HEADER_HEIGHT, theme } from '../../helpers/theme'
 import { IState } from '../../store/reducers'
 import { IntervalMetric } from '../../store/requests/intervalMetrics'
 import { Job, RunState } from '../../types/api'
+import { JobsListRole, getJobsListRole } from '../../helpers/lineage'
 import { LineageMetric } from '../../store/requests/lineageMetrics'
 import { MiniGraphContainer } from './MiniGraphContainer'
 import { Nullable } from '../../types/util/Nullable'
@@ -18,10 +28,9 @@ import {
   fetchLineageMetrics,
   fetchSourceMetrics,
 } from '../../store/actionCreators'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import CircularProgress from '@mui/material/CircularProgress/CircularProgress'
 import JobRunItem from './JobRunItem'
-import JobsDrawer from './JobsDrawer'
 import MQTooltip from '../../components/core/tooltip/MQTooltip'
 import MqEmpty from '../../components/core/empty/MqEmpty'
 import MqText from '../../components/core/text/MqText'
@@ -55,6 +64,7 @@ type RefreshInterval = '30s' | '5m' | '10m' | 'Never'
 const REFRESH_INTERVALS: RefreshInterval[] = ['30s', '5m', '10m', 'Never']
 
 const JOB_RUN_LIMIT = 10
+const JOB_FETCH_LIMIT = 100
 // Detailed mode lists jobs, then loads recent runs and dataset versions for every job.
 // The dashboard only needs the latest-run summary already returned by the single-query path.
 const INCLUDE_RUN_DETAILS = false
@@ -72,6 +82,15 @@ const states: { label: RunState; color: string; bgColor: string }[] = [
   { label: 'FAILED', color: theme.palette.error.main, bgColor: 'error' },
   { label: 'ABORTED', color: theme.palette.secondary.main, bgColor: 'secondary' },
 ]
+
+const jobRoleColor: Record<JobsListRole, 'primary' | 'secondary' | 'info' | 'warning' | 'default'> =
+  {
+    TASK: 'primary',
+    VALIDATION: 'info',
+    OBSERVER: 'warning',
+    DAG: 'secondary',
+    JOB: 'default',
+  }
 
 const Dashboard: React.FC = ({
   lineageMetrics,
@@ -91,12 +110,13 @@ const Dashboard: React.FC = ({
   isSourceMetricsLoading,
 }: StateProps & DispatchProps) => {
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const [timeframe, setTimeframe] = React.useState(
     searchParams.get('timeframe') === 'week' ? '7 Days' : '24 Hours'
   )
   const [intervalKey, setIntervalKey] = React.useState<RefreshInterval>('30s')
   const [selectedState, setSelectedState] = React.useState<Nullable<RunState>>(null)
-  const [jobsDrawerOpen, setJobsDrawerOpen] = React.useState(false)
+  const [jobRoleFilter, setJobRoleFilter] = React.useState<JobsListRole | null>(null)
   const [timelineOpen, setTimelineOpen] = React.useState(false)
 
   useEffect(() => {
@@ -125,7 +145,7 @@ const Dashboard: React.FC = ({
   useEffect(() => {
     fetchJobs(
       null,
-      JOB_RUN_LIMIT,
+      JOB_FETCH_LIMIT,
       0,
       selectedState ? selectedState : undefined,
       INCLUDE_RUN_DETAILS
@@ -161,7 +181,7 @@ const Dashboard: React.FC = ({
 
   const refresh = () => {
     const currentSearchParams = searchParams.get('timeframe')
-    fetchJobs(null, JOB_RUN_LIMIT, 0, undefined, INCLUDE_RUN_DETAILS)
+    fetchJobs(null, JOB_FETCH_LIMIT, 0, undefined, INCLUDE_RUN_DETAILS)
     fetchLineageMetrics(currentSearchParams === 'week' ? 'week' : 'day')
     fetchJobMetrics(currentSearchParams === 'week' ? 'week' : 'day')
     fetchDatasetMetrics(currentSearchParams === 'week' ? 'week' : 'day')
@@ -169,29 +189,12 @@ const Dashboard: React.FC = ({
   }
 
   const { failed, started, completed, aborted } = metrics
+  const recentJobs = jobs
+    .filter((job) => !jobRoleFilter || getJobsListRole(job) === jobRoleFilter)
+    .slice(0, JOB_RUN_LIMIT)
 
   return (
     <>
-      <Drawer
-        anchor={'right'}
-        open={jobsDrawerOpen}
-        onClose={() => {
-          setJobsDrawerOpen(false)
-          fetchJobs(null, JOB_RUN_LIMIT, 0, undefined, INCLUDE_RUN_DETAILS)
-        }}
-        PaperProps={{
-          sx: {
-            backgroundColor: theme.palette.background.default,
-            backgroundImage: 'none',
-            mt: `${HEADER_HEIGHT}px`,
-            height: `calc(100vh - ${HEADER_HEIGHT}px)`,
-          },
-        }}
-      >
-        <Box>
-          <JobsDrawer />
-        </Box>
-      </Drawer>
       <Drawer
         anchor={'right'}
         open={timelineOpen}
@@ -344,7 +347,12 @@ const Dashboard: React.FC = ({
                 }}
               >
                 <Box display={'flex'} justifyContent={'space-between'} alignItems={'center'} mb={1}>
-                  <MqText subheading>Jobs</MqText>
+                  <Box>
+                    <MqText subheading>Recent job activity</MqText>
+                    <MqText subdued>
+                      Operational overview. Use Jobs for the complete searchable list.
+                    </MqText>
+                  </Box>
                   <Box display={'flex'} alignItems={'center'}>
                     {isJobsLoading && (
                       <CircularProgress sx={{ mr: 2 }} size={16} color={'primary'} />
@@ -353,16 +361,38 @@ const Dashboard: React.FC = ({
                       disableRipple
                       size={'small'}
                       endIcon={<ChevronRight />}
-                      onClick={() => setJobsDrawerOpen(true)}
+                      onClick={() =>
+                        navigate(jobRoleFilter ? `/jobs?types=${jobRoleFilter}` : '/jobs')
+                      }
                     >
-                      See More
+                      See all jobs
                     </Button>
                   </Box>
                 </Box>
-                {jobs.slice(0, JOB_RUN_LIMIT).map((job) => (
+                <Box display='flex' alignItems='center' gap={1} py={1.5} flexWrap='wrap'>
+                  <MqText subdued>FILTER BY TYPE</MqText>
+                  <Chip
+                    label='ALL'
+                    size='small'
+                    color={jobRoleFilter ? 'default' : 'primary'}
+                    variant={jobRoleFilter ? 'outlined' : 'filled'}
+                    onClick={() => setJobRoleFilter(null)}
+                  />
+                  {(Object.keys(jobRoleColor) as JobsListRole[]).map((role) => (
+                    <Chip
+                      key={role}
+                      label={role}
+                      size='small'
+                      color={jobRoleColor[role]}
+                      variant={jobRoleFilter === role ? 'filled' : 'outlined'}
+                      onClick={() => setJobRoleFilter(jobRoleFilter === role ? null : role)}
+                    />
+                  ))}
+                </Box>
+                {recentJobs.map((job) => (
                   <JobRunItem key={job.id.namespace + job.id.name} job={job} />
                 ))}
-                {!isJobsLoading && jobs.length === 0 && (
+                {!isJobsLoading && recentJobs.length === 0 && (
                   <MqEmpty title={'No jobs found'}>
                     <>
                       <MqText subdued>

@@ -14,7 +14,9 @@ import { theme } from '../../helpers/theme'
 import MqText from '../core/text/MqText'
 import React from 'react'
 
-interface OwnProps {}
+interface OwnProps {
+  kind?: 'all' | 'jobs'
+}
 
 interface StateProps {
   namespaces: Namespace[]
@@ -31,9 +33,24 @@ const NamespaceSelect: React.FC<NamespaceSelectProps> = ({
   namespaces,
   selectedNamespace,
   selectNamespace,
+  kind = 'all',
 }) => {
   const [open, setOpen] = React.useState(false)
   const i18next = require('i18next')
+  const visibleNamespaces = namespaces.filter(
+    (namespace) =>
+      kind !== 'jobs' || (!namespace.name.includes('://') && namespace.name !== 'default')
+  )
+
+  React.useEffect(() => {
+    if (
+      kind === 'jobs' &&
+      visibleNamespaces.length &&
+      !visibleNamespaces.some((namespace) => namespace.name === selectedNamespace)
+    ) {
+      selectNamespace(visibleNamespaces[0].name)
+    }
+  }, [kind, namespaces, selectedNamespace])
 
   if (selectedNamespace) {
     return (
@@ -81,7 +98,7 @@ const NamespaceSelect: React.FC<NamespaceSelectProps> = ({
           onClose={() => setOpen(false)}
           sx={{ cursor: 'pointer' }}
         >
-          {namespaces.map((namespace) => (
+          {visibleNamespaces.map((namespace) => (
             <MenuItem key={namespace.name} value={namespace.name}>
               {namespace.name}
             </MenuItem>

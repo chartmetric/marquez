@@ -15,6 +15,11 @@ import { datasetFacetsQualityAssertions, datasetFacetsStatus } from '../../helpe
 import { faDatabase } from '@fortawesome/free-solid-svg-icons/faDatabase'
 import { fetchDataset, resetDataset } from '../../store/actionCreators'
 import { formatUpdatedAt } from '../../helpers'
+import {
+  getDatasetDisplayName,
+  getDatasetPlatformLabel,
+  summarizeColumnChanges,
+} from '../../helpers/lineage'
 import { truncateText, truncateTextFront } from '../../helpers/text'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Box from '@mui/system/Box'
@@ -54,6 +59,7 @@ const TableLineageDatasetNode = ({
   const isSelected = name === node.data.dataset.name && namespace === node.data.dataset.namespace
   const [searchParams, setSearchParams] = useSearchParams()
   const isCollapsed = searchParams.get('collapsedNodes')?.split(',').includes(node.id)
+  const columnChangeSummary = summarizeColumnChanges(node.data.columnChanges || [])
 
   const handleClick = () => {
     navigate(
@@ -117,6 +123,28 @@ const TableLineageDatasetNode = ({
                   color={datasetFacetsStatus(dataset.facets)}
                 />
               </Box>
+            </>
+          )}
+          {!!node.data.columnChanges?.length && (
+            <>
+              <Divider sx={{ my: 1 }} />
+              <MqText block bold>
+                Updated columns:
+              </MqText>
+              {columnChangeSummary.visible.map((change) => (
+                <MqText
+                  key={`${change.sourceDataset}.${change.sourceField}:${change.targetField}`}
+                  block
+                  font={'mono'}
+                >
+                  {change.targetField} ← {change.sourceDataset}.{change.sourceField}
+                </MqText>
+              ))}
+              {columnChangeSummary.remaining > 0 && (
+                <MqText block sx={{ color: theme.palette.text.secondary }}>
+                  {`+ ${columnChangeSummary.remaining} more columns`}
+                </MqText>
+              )}
             </>
           )}
         </Box>
@@ -201,19 +229,27 @@ const TableLineageDatasetNode = ({
         title={addToToolTip(node.data.dataset, dataset)}
       >
         <g>
-          <text
-            fontSize='8'
-            fontFamily={`${'Source Code Pro'}, mono`}
-            fill={'white'}
-            x={28}
-            y={10}
-            onClick={handleClick}
-            cursor={'pointer'}
-          >
-            DATASET
-          </text>
+          <foreignObject x={28} y={2} width={node.width - 48} height={10}>
+            <Box
+              onClick={handleClick}
+              sx={{
+                color: theme.palette.common.white,
+                cursor: 'pointer',
+                fontFamily: 'Source Code Pro, monospace',
+                fontSize: '7.5px',
+                lineHeight: '10px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {`DATASET · ${getDatasetPlatformLabel(node.data.dataset.namespace)}${
+                node.data.relationship ? ` · ${node.data.relationship}` : ''
+              }`}
+            </Box>
+          </foreignObject>
           <text fontSize='8' fill={'white'} x={28} y={20} cursor={'pointer'} onClick={handleClick}>
-            {truncateText(node.data.dataset.name, 15)}
+            {truncateText(getDatasetDisplayName(node.data.dataset.name), 21)}
           </text>
         </g>
       </MQTooltip>
@@ -232,6 +268,16 @@ const TableLineageDatasetNode = ({
             </text>
           )
         })}
+      {!isCompact && !!node.data.columnChanges?.length && (
+        <text
+          fontSize='8'
+          fill={theme.palette.primary.main}
+          x={10}
+          y={34 + node.data.dataset.fields.length * 10}
+        >
+          UPDATED {node.data.columnChanges.length}
+        </text>
+      )}
     </g>
   )
 }

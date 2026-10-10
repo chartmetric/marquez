@@ -8,6 +8,7 @@ import { TableLineageJobNodeData } from './nodes'
 import { connect } from 'react-redux'
 import { faCog } from '@fortawesome/free-solid-svg-icons/faCog'
 import { formatUpdatedAt } from '../../helpers'
+import { getLineageJobRole } from '../../helpers/lineage'
 import { runStateColor } from '../../helpers/nodes'
 import { theme } from '../../helpers/theme'
 import { truncateText, truncateTextFront } from '../../helpers/text'
@@ -32,6 +33,7 @@ const TableLineageJobNode = ({ node }: TableLineageJobNodeProps & StateProps) =>
   const navigate = useNavigate()
   const { name, namespace } = useParams()
   const isSelected = name === node.data.job.name && namespace === node.data.job.namespace
+  const jobRole = getLineageJobRole(node.data.job)
   const handleClick = () => {
     navigate(
       `/lineage/job/${encodeURIComponent(node.data.job.namespace)}/${encodeURIComponent(
@@ -149,7 +151,7 @@ const TableLineageJobNode = ({ node }: TableLineageJobNodeProps & StateProps) =>
             onClick={handleClick}
             cursor={'pointer'}
           >
-            JOB
+            {jobRole}
           </text>
           <text fontSize='8' fill={'white'} x={28} y={20} onClick={handleClick} cursor={'pointer'}>
             {truncateText(node.data.job.name, 16)}
