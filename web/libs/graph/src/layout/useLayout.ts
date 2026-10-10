@@ -14,6 +14,7 @@ export interface Props<K, D> {
   keepPreviousGraph?: boolean
   webWorkerUrl?: string
   getLayoutOptions?: NodeRenderer<K, D>['getLayoutOptions']
+  rootLayoutOptions?: Record<string, string>
 }
 
 interface Output<K, D> {
@@ -70,6 +71,7 @@ export const useLayout = <K, D>({
   keepPreviousGraph: keepPreviousLayout = false,
   webWorkerUrl = '/elk-worker.min.js',
   getLayoutOptions = (node) => node,
+  rootLayoutOptions,
 }: Props<K, D>): Output<K, D> => {
   /* STATE */
   // Layout is stored in a ref to support `keepPreviousGraph`.
@@ -116,6 +118,7 @@ export const useLayout = <K, D>({
       'crossingMinimization.semiInteractive': 'false',
       hierarchyHandling: 'INCLUDE_CHILDREN',
       'nodeLabels.placement': '[H_CENTER, V_TOP, INSIDE]',
+      ...rootLayoutOptions,
     }
 
     const mapNode = ({ id, width, height, padding, children }: Node<K, D>): ElkNode => ({
@@ -158,7 +161,7 @@ export const useLayout = <K, D>({
     // If the graph has changed store it on the ref and return the new value.
     elkInputRef.current = newElkInput
     return newElkInput
-  }, [rootId, nodes, edges, direction])
+  }, [rootId, nodes, edges, direction, rootLayoutOptions])
 
   /* EFFECTS */
   // Render

@@ -3,9 +3,12 @@
 
 import {
   ActivityJob,
+  EvaluatedActivityRow,
+  compareActivityRows,
   getActivityRows,
   getActivityBackends,
   getActivityError,
+  getActivityUnavailableReason,
   getActivityStatus,
   getAirflowServer,
   getRowObservations,
@@ -13,6 +16,7 @@ import {
   getVolumeHealth,
   mergeActivityJobs,
   resolveActivityBackend,
+  splitQualifiedTableName,
 } from '../../helpers/ingestionActivity'
 import { Run } from '../../types/api'
 
@@ -140,6 +144,75 @@ describe('getVolumeHealth', () => {
 
     expect(health?.label).toBe('CRITICAL')
     expect(health?.baseline).toBe(0)
+  })
+})
+
+describe('activity presentation', () => {
+  const row = (
+    name: string,
+    status: EvaluatedActivityRow['status']['label'],
+    updatedAt: string,
+    health?: EvaluatedActivityRow['health']
+  ) =>
+    ({
+      backend: 'postgres',
+      job: {
+        name,
+        namespace: 'airflow-example',
+        run: { id: name, endedAt: updatedAt } as Run,
+        runs: [],
+      },
+      table: 'example',
+      task: 'Load',
+      status: { label: status },
+      health,
+    } as EvaluatedActivityRow)
+
+  it('sorts actionable rows before newer healthy rows', () => {
+    const healthy = row('NewHealthy', 'OBSERVING', '2026-10-10T10:00:00Z', {
+      label: 'NORMAL',
+      reason: '',
+      sampleCount: 5,
+    })
+    const critical = row('OldCritical', 'OBSERVING', '2026-10-09T10:00:00Z', {
+      label: 'CRITICAL',
+      reason: '',
+      sampleCount: 5,
+    })
+
+    expect([healthy, critical].sort(compareActivityRows).map(({ job }) => job.name)).toEqual([
+      'OldCritical',
+      'NewHealthy',
+    ])
+  })
+
+  it('sorts equal-priority rows by latest activity', () => {
+    const older = row('Older', 'OBSERVING', '2026-10-09T10:00:00Z')
+    const newer = row('Newer', 'OBSERVING', '2026-10-10T10:00:00Z')
+
+    expect([older, newer].sort(compareActivityRows).map(({ job }) => job.name)).toEqual([
+      'Newer',
+      'Older',
+    ])
+  })
+
+  it('splits a qualified table at the final separator', () => {
+    expect(splitQualifiedTableName('chartmetric_analytics.youtube_top_shorts')).toEqual({
+      qualifier: 'chartmetric_analytics',
+      table: 'youtube_top_shorts',
+    })
+    expect(splitQualifiedTableName('genius_album')).toEqual({
+      qualifier: undefined,
+      table: 'genius_album',
+    })
+  })
+
+  it('keeps the declared reason when an output cannot be measured safely', () => {
+    expect(
+      getActivityUnavailableReason([
+        { reason: 'No verified safe timestamp query is configured for this output.' },
+      ])
+    ).toBe('No verified safe timestamp query is configured for this output.')
   })
 })
 

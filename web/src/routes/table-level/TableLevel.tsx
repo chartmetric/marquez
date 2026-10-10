@@ -5,7 +5,7 @@ import { DEFAULT_MAX_SCALE, Graph, ZoomPanControls } from '../../../libs/graph'
 import { Drawer } from '@mui/material'
 import { HEADER_HEIGHT, theme } from '../../helpers/theme'
 import { IState } from '../../store/reducers'
-import { JobOrDataset } from '../../types/lineage'
+import { JobOrDataset, LineageJob } from '../../types/lineage'
 import { LineageGraph } from '../../types/api'
 import { TableLevelNodeData, tableLevelNodeRenderer } from './nodes'
 import { ZoomControls } from '../column-level/ZoomControls'
@@ -13,7 +13,12 @@ import { bindActionCreators } from 'redux'
 import { connect } from 'react-redux'
 import { createElkNodes } from './layout'
 import { fetchLineage } from '../../store/actionCreators'
-import { parseLineageDepth } from '../../helpers/lineage'
+import {
+  getEmptyLineageMessage,
+  getLineageJobRole,
+  parseLineageDepth,
+  parseColumnChangePreview,
+} from '../../helpers/lineage'
 import { useCallbackRef } from '../../helpers/hooks'
 import { useParams, useSearchParams } from 'react-router-dom'
 import ParentSize from '@visx/responsive/lib/components/ParentSize'
@@ -32,6 +37,7 @@ type ColumnLevelProps = StateProps & DispatchProps
 
 const zoomInFactor = 1.5
 const zoomOutFactor = 1 / zoomInFactor
+const tableLevelLayoutOptions = { 'cycleBreaking.strategy': 'GREEDY' }
 
 const ColumnLevel: React.FC<ColumnLevelProps> = ({
   fetchLineage: fetchLineage,
@@ -48,6 +54,7 @@ const ColumnLevel: React.FC<ColumnLevelProps> = ({
   const graphControls = useRef<ZoomPanControls>()
 
   const collapsedNodes = searchParams.get('collapsedNodes')
+  const columnChangePreview = parseColumnChangePreview(searchParams.get('columnPreview'))
 
   useEffect(() => {
     if (name && namespace && nodeType) {
@@ -83,14 +90,23 @@ const ColumnLevel: React.FC<ColumnLevelProps> = ({
     `${nodeType}:${namespace}:${name}`,
     isCompact,
     isFull,
-    collapsedNodes
+    collapsedNodes,
+    columnChangePreview
   )
+  const selectedLineageNode = lineage.graph.find(
+    (lineageNode) => lineageNode.id === `${nodeType}:${namespace}:${name}`
+  )
+  const emptyLineageMessage =
+    selectedLineageNode?.type === 'JOB' && nodes.length === 1 && edges.length === 0
+      ? getEmptyLineageMessage(getLineageJobRole(selectedLineageNode.data as LineageJob))
+      : undefined
+  const displayedNodes = emptyLineageMessage ? [] : nodes
 
   useEffect(() => {
     setTimeout(() => {
       graphControls.current?.fitContent()
     }, 300)
-  }, [nodes.length, isCompact])
+  }, [displayedNodes.length, isCompact])
 
   return (
     <>
@@ -105,6 +121,26 @@ const ColumnLevel: React.FC<ColumnLevelProps> = ({
         setIsFull={setIsFull}
       />
       <Box height={`calc(100vh - ${HEADER_HEIGHT}px - ${HEADER_HEIGHT}px - 1px)`}>
+        {emptyLineageMessage && (
+          <Box
+            role='status'
+            sx={{
+              position: 'absolute',
+              top: `${HEADER_HEIGHT * 2 + 24}px`,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 1,
+              px: 2,
+              py: 1,
+              color: theme.palette.text.secondary,
+              backgroundColor: theme.palette.background.paper,
+              border: `1px solid ${theme.palette.divider}`,
+              borderRadius: 1,
+            }}
+          >
+            {emptyLineageMessage}
+          </Box>
+        )}
         <Drawer
           anchor={'right'}
           open={!!searchParams.get('tableLevelNode')}
@@ -134,9 +170,10 @@ const ColumnLevel: React.FC<ColumnLevelProps> = ({
               backgroundColor={theme.palette.background.default}
               height={parent.height}
               width={parent.width}
-              nodes={nodes}
+              nodes={displayedNodes}
               edges={edges}
               direction='right'
+              rootLayoutOptions={tableLevelLayoutOptions}
               nodeRenderers={tableLevelNodeRenderer}
               setZoomPanControls={setGraphControls}
             />

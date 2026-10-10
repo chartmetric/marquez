@@ -5,12 +5,15 @@ import {
   ActivityJob,
   ActivityRow,
   ActivityStatusLabel,
+  EvaluatedActivityRow,
   IngestionActivityObservation,
   VolumeHealthLabel,
+  compareActivityRows,
   getActivityBackends,
   getActivityError,
   getActivityRows,
   getActivityStatus,
+  getActivityUnavailableReason,
   getIngestionFacet,
   getJobParts,
   getObservationBackend,
@@ -19,6 +22,7 @@ import {
   getVolumeHealth,
   mergeActivityJobs,
   resolveActivityBackend,
+  splitQualifiedTableName,
 } from '../../helpers/ingestionActivity'
 import { ArrowBackIosRounded } from '@mui/icons-material'
 import {
@@ -46,7 +50,8 @@ import MqText from '../../components/core/text/MqText'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 
 const REFRESH_INTERVAL_MS = 30000
-const RUN_FETCH_LIMIT = 100
+// The UI uses the latest run plus at most ten historical runs for its baseline.
+const RUN_FETCH_LIMIT = 11
 
 const STATUS_DETAILS: Record<ActivityStatusLabel, { color: string; description: string }> = {
   OBSERVING: {
@@ -66,7 +71,10 @@ const HEALTH_DETAILS: Record<VolumeHealthLabel, { color: string; description: st
   LOW: { color: theme.palette.warning.main, description: 'Below warning' },
   CRITICAL: { color: theme.palette.error.main, description: 'Below critical' },
   LEARNING: { color: theme.palette.info.main, description: 'Building baseline' },
-  VARIABLE: { color: theme.palette.secondary.main, description: 'Expected to vary' },
+  VARIABLE: {
+    color: theme.palette.secondary.main,
+    description: 'Threshold evaluation disabled for this variable workload',
+  },
 }
 const HEALTH_ORDER: VolumeHealthLabel[] = ['NORMAL', 'LOW', 'CRITICAL', 'LEARNING', 'VARIABLE']
 
@@ -79,6 +87,8 @@ const activityStatus = (observations: IngestionActivityObservation[]) => {
     description:
       label === 'ERROR'
         ? getActivityError(observations) || details.description
+        : label === 'NO DATA'
+        ? getActivityUnavailableReason(observations) || details.description
         : details.description,
   }
 }
@@ -124,23 +134,25 @@ const Ingestion: React.FC = () => {
   }, [loadActivity])
 
   const rows = useMemo<ActivityRow[]>(() => getActivityRows(jobs), [jobs])
-  const evaluatedRows = useMemo(
+  const evaluatedRows = useMemo<EvaluatedActivityRow[]>(
     () =>
-      rows.map((row) => {
-        const observations = getRowObservations(
-          row.job.run,
-          row.table,
-          row.task,
-          row.job.name,
-          row.backend
-        )
-        return {
-          ...row,
-          activity: getObservedCount(observations),
-          health: getVolumeHealth(row.job, row.table, row.task, row.backend),
-          status: activityStatus(observations),
-        }
-      }),
+      rows
+        .map((row) => {
+          const observations = getRowObservations(
+            row.job.run,
+            row.table,
+            row.task,
+            row.job.name,
+            row.backend
+          )
+          return {
+            ...row,
+            activity: getObservedCount(observations),
+            health: getVolumeHealth(row.job, row.table, row.task, row.backend),
+            status: activityStatus(observations),
+          }
+        })
+        .sort(compareActivityRows),
     [rows]
   )
   const namespaces = useMemo(() => [...new Set(jobs.map((job) => job.namespace))].sort(), [jobs])
@@ -344,6 +356,18 @@ const Ingestion: React.FC = () => {
           REFRESH
         </Button>
       </Box>
+      <Box border={1} borderColor='divider' borderRadius={1} p={2} mb={2}>
+        <MqText subheading>HOW TO READ THIS PAGE</MqText>
+        <MqText subdued>
+          RUN INGESTED is the number of rows timestamped inside the latest DAG-run window. DAILY
+          SNAPSHOT is a table-level daily count. NOT MEASURED means no safe metric query is
+          configured; it does not mean zero rows. VARIABLE is a policy, not a healthy/unhealthy
+          result.
+        </MqText>
+        <MqText subdued small>
+          Sorted by rows needing attention, then latest activity and name.
+        </MqText>
+      </Box>
       <Box display='flex' mb={3} gap={2}>
         {[
           ['MONITORED TASK OUTPUTS', rows.length],
@@ -444,7 +468,13 @@ const Ingestion: React.FC = () => {
           )
         })}
       </Box>
-      <Box display='grid' gridTemplateColumns='2fr 1.5fr 1.25fr 1fr 0.75fr 0.75fr' px={2} mb={1}>
+      <Box
+        display='grid'
+        gridTemplateColumns='minmax(0, 2fr) minmax(0, 1.5fr) minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 0.75fr) minmax(0, 0.75fr)'
+        columnGap={2}
+        px={2}
+        mb={1}
+      >
         <MqText subdued>DAG / TASK / AIRFLOW SERVER</MqText>
         <MqText subdued>TARGET TABLE / BACKEND</MqText>
         <MqText subdued>RECENT 10 RUNS</MqText>
@@ -458,6 +488,13 @@ const Ingestion: React.FC = () => {
       {!error &&
         filteredRows.map(({ backend, job, table, task, status, health, activity }) => {
           const labels = getJobParts(job.name)
+          const qualifiedTable = splitQualifiedTableName(table)
+          const ellipsis = {
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }
           return (
             <Box
               key={`${job.namespace}:${job.name}:${backend}:${task}:${table}`}
@@ -485,21 +522,45 @@ const Ingestion: React.FC = () => {
             >
               <Box
                 display='grid'
-                gridTemplateColumns='2fr 1.5fr 1.25fr 1fr 0.75fr 0.75fr'
+                gridTemplateColumns='minmax(0, 2fr) minmax(0, 1.5fr) minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 0.75fr) minmax(0, 0.75fr)'
+                columnGap={2}
                 alignItems='center'
               >
-                <Box>
-                  <MqText font='mono'>{labels.dag}</MqText>
-                  <MqText subdued>{task}</MqText>
-                  <MqText subdued>{`AIRFLOW SERVER · ${job.namespace}`}</MqText>
+                <Box minWidth={0}>
+                  <MQTooltip title={labels.dag}>
+                    <Box sx={ellipsis}>
+                      <MqText font='mono' sx={ellipsis}>
+                        {labels.dag}
+                      </MqText>
+                    </Box>
+                  </MQTooltip>
+                  <MQTooltip title={task}>
+                    <Box sx={ellipsis}>
+                      <MqText subdued sx={ellipsis}>
+                        {task}
+                      </MqText>
+                    </Box>
+                  </MQTooltip>
+                  <MqText subdued sx={ellipsis}>{`AIRFLOW SERVER · ${job.namespace}`}</MqText>
                   <MqText subdued>
                     {job.run
                       ? formatUpdatedAt(job.run.endedAt || job.run.startedAt)
                       : 'No completed run'}
                   </MqText>
                 </Box>
-                <Box>
-                  <MqText font='mono'>{table}</MqText>
+                <Box minWidth={0}>
+                  <MQTooltip title={table}>
+                    <Box minWidth={0}>
+                      {qualifiedTable.qualifier && (
+                        <MqText subdued small sx={ellipsis}>
+                          {qualifiedTable.qualifier}
+                        </MqText>
+                      )}
+                      <MqText font='mono' sx={ellipsis}>
+                        {qualifiedTable.table}
+                      </MqText>
+                    </Box>
+                  </MQTooltip>
                   <MqText subdued small>
                     {backend}
                   </MqText>
@@ -507,7 +568,11 @@ const Ingestion: React.FC = () => {
                 <IngestionRunSparkline backend={backend} job={job} table={table} task={task} />
                 <Box>
                   <MqText subdued>
-                    {activity?.runActivity ? 'RUN INGESTED' : 'DAILY SNAPSHOT'}
+                    {activity === undefined
+                      ? 'NOT MEASURED'
+                      : activity.runActivity
+                      ? 'RUN INGESTED'
+                      : 'DAILY SNAPSHOT'}
                   </MqText>
                   <MqText large>
                     {activity === undefined ? 'N/A' : activity.count.toLocaleString('en-US')}

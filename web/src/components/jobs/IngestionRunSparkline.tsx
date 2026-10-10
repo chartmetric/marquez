@@ -38,7 +38,7 @@ const IngestionRunSparkline: React.FC<IngestionRunSparklineProps> = ({
     .filter((point): point is { count: number; run: Run } => point.count !== undefined)
   const maxCount = Math.max(...points.map((point) => point.count), 1)
 
-  if (!points.length) return <MqText subdued>Waiting for run metrics</MqText>
+  if (!points.length) return <MqText subdued>Run metric not configured</MqText>
 
   return (
     <Box display='flex' height={44} alignItems='flex-end'>
